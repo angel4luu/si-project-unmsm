@@ -70,8 +70,9 @@ def ejecutar_pipeline(texto_usuario: str, verbose: bool = True) -> Dict[str, Any
     if verbose:
         print(f"\n[1] Preferencias extraídas: {dias} días | Presupuesto: S/{presupuesto:.2f} | Condición: {perfil.get('condicion_fisica')}")
         print(f"[2] Mapeo: {dias} días -> K = {k} destinos")
-        print(f"[3] Lógica Difusa: Evaluadas {len(scores)} lomas")
-        print(f"[4] Ruta AG óptima: {' -> '.join(resultado_ag['ruta_ids'])} | Fitness: {resultado_ag['fitness']:.3f}")
+        metodo = resultado_ag.get("metodo", "algoritmo_genetico")
+        desc_metodo = "Atajo Determinista K=1" if metodo == "atajo_determinista" else "Algoritmo Genetico"
+        print(f"[4] Ruta Optima ({desc_metodo}): {' -> '.join(resultado_ag['ruta_ids'])} | Fitness: {resultado_ag['fitness']:.3f}")
         print(f"    Costo total: S/{resultado_ag['costo_total']:.2f} | Distancia: {resultado_ag['distancia_total_km']:.1f} km\n")
         print(itinerario)
         print("\nGUÍA BÁSICA DE TRANSPORTE")

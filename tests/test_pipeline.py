@@ -11,17 +11,16 @@ from main import ejecutar_pipeline
 class TestPipeline(unittest.TestCase):
 
     def test_mapping_dias_a_k(self):
-        """Valida la función de mapeo determinista."""
+        """Valida la funcion de mapeo determinista urbano."""
         self.assertEqual(dias_a_k(0), 1)
         self.assertEqual(dias_a_k(1), 1)
-        self.assertEqual(dias_a_k(3), 1)
-        self.assertEqual(dias_a_k(4), 1)
-        self.assertEqual(dias_a_k(5), 2)
-        self.assertEqual(dias_a_k(8), 2)
-        self.assertEqual(dias_a_k(12), 3)
-        self.assertEqual(dias_a_k(16), 4)
-        self.assertEqual(dias_a_k(30), 8)  # Cota máxima K=8
-        self.assertEqual(dias_a_k(100), 8)
+        self.assertEqual(dias_a_k(2), 2)
+        self.assertEqual(dias_a_k(3), 3)
+        self.assertEqual(dias_a_k(4), 4)
+        self.assertEqual(dias_a_k(5), 5)
+        self.assertEqual(dias_a_k(6), 6)
+        self.assertEqual(dias_a_k(7), 6)  # Cota maxima K=6
+        self.assertEqual(dias_a_k(30), 6)
 
     def test_llm_extractor_preferencias(self):
         """Valida la extracción de entidades desde texto libre."""

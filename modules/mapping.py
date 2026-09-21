@@ -1,28 +1,26 @@
 """
-Módulo de Mapeo Determinista (Días Disponibles -> K Destinos).
+Modulo de Mapeo Determinista (Dias Disponibles -> K Destinos).
 """
 
-import math
 
-
-def dias_a_k(dias_disponibles: int, k_max: int = 8, dias_por_destino: float = 4.0) -> int:
+def dias_a_k(dias_disponibles: int, k_min: int = 2, k_max: int = 6) -> int:
     """
-    Calcula el número de destinos K a visitar según los días disponibles del turista.
-    
-    Fundamentación:
-        K = ceil(dias_disponibles / 4.0), con cota superior K_max = 8 y mínima K_min = 1.
-        Un destino promedio requiere traslado, trekking y descanso.
-    
+    Calcula el numero de destinos K a visitar segun los dias disponibles del turista.
+
+    Regla de Asignacion Urbana:
+    - 1 dia disponible: Retorna K = 1 (horizonte unitario para atajo determinista).
+    - 2 o mas dias: Asigna 1 destino por dia, acotado entre k_min (2) y k_max (6).
+      Garantiza un espacio combinatorio formal para el Algoritmo Genetico.
+
     Args:
-        dias_disponibles (int): Días de viaje disponibles declarados por el usuario.
-        k_max (int): Número máximo de destinos visitables en una ruta (por defecto 8).
-        dias_por_destino (float): Tasa de días requeridos por destino (por defecto 4.0).
-        
+        dias_disponibles (int): Dias de trekking declarados por el usuario.
+        k_min (int): Numero minimo de destinos para optimizacion combinatoria (default 2).
+        k_max (int): Cota maxima de destinos para itinerario en Lima (default 6).
+
     Returns:
-        int: Número de destinos K para la optimización del Algoritmo Genético.
+        int: Numero de destinos K a seleccionar y ordenar.
     """
-    if dias_disponibles <= 0:
+    dias = int(dias_disponibles)
+    if dias <= 1:
         return 1
-    
-    k_calculado = math.ceil(dias_disponibles / dias_por_destino)
-    return max(1, min(k_calculado, k_max))
+    return min(max(k_min, dias), k_max)

@@ -276,6 +276,7 @@ Se utiliza un **sistema de inferencia difusa tipo Mamdani** que toma **4 variabl
 
 > **Decisión de Diseño Crítica (Reducción de 9 a 4 variables):**
 > Inicialmente se consideró un esquema de 9 variables. No obstante, por fundamentos de ingeniería de software e inteligencia artificial:
+>
 > 1. **Evitar la "Maldición de la Dimensionalidad":** Un sistema de 9 variables con 3 términos cada una requiere un espacio combinatorial de $3^9 = 19,683$ reglas. Con pocas reglas, el 99% del espacio queda sin activación, provocando que la defuzzificación en `scikit-fuzzy` falle (arrojando errores `NaN` o valores planos de 0). Con **4 variables**, el espacio máximo es de $3^4 = 81$ combinaciones, lo cual permite una cobertura completa, robusta y matemáticamente verificable con un conjunto manejable de 20 reglas.
 > 2. **Estricta Separación de Responsabilidades:** La Lógica Difusa se reserva para información cualitativa, subjetiva o incierta (percepción de seguridad, verdor estacional, saturación, dificultad del sendero). Las variables deterministas exactas (**Costo en Soles** y **Distancia en km**) pertenecen al **Algoritmo Genético**, que las optimiza como funciones de costo físico y restricciones duras cuadráticas ($\Omega_{\text{presupuesto}}$, $\Omega_{\text{tiempo}}$), evitando la doble penalización.
 
@@ -284,6 +285,7 @@ Se utiliza un **sistema de inferencia difusa tipo Mamdani** que toma **4 variabl
 Cada variable se define con su dominio numérico, términos lingüísticos y justificación:
 
 #### V1: Saturación Turística
+
 - **Qué mide**: Nivel de afluencia turística concurrente del destino.
 - **Universo de discurso**: Escala normalizada $[0.0, 1.0]$ (0 = vacío/desconocido, 1 = saturación máxima).
 - **Términos lingüísticos**:
@@ -294,6 +296,7 @@ Cada variable se define con su dominio numérico, términos lingüísticos y jus
 - **Fuente de datos**: Estadísticas de visitas del GRML y reportes de comités locales ecoturísticos.
 
 #### V2: Seguridad Percibida
+
 - **Qué mide**: Percepción cualitativa de seguridad ciudadana en el entorno de la loma y sus accesos.
 - **Universo de discurso**: Escala $[0, 10]$ (0 = muy riesgoso, 10 = muy seguro).
 - **Términos lingüísticos**:
@@ -304,6 +307,7 @@ Cada variable se define con su dominio numérico, términos lingüísticos y jus
 - **Fuente de datos**: Informes del INEI sobre seguridad distrital, observatorios ciudadanos y retroalimentación de visitantes.
 
 #### V3: Estado Ecosistémico / Clima-Verdor
+
 - **Qué mide**: Calidad del ecosistema según las condiciones de niebla (*garúa*) y verdor estacional.
 - **Universo de discurso**: Escala $[0, 10]$ (0 = desértico/seco, 10 = verdor óptimo con colchón de nubes).
 - **Términos lingüísticos**:
@@ -314,6 +318,7 @@ Cada variable se define con su dominio numérico, términos lingüísticos y jus
 - **Fuente de datos**: Reportes meteorológicos de SENAMHI y estado fenológico de la vegetación (SERFOR / Red de Lomas).
 
 #### V4: Accesibilidad Cualitativa
+
 - **Qué mide**: Grado de facilidad o complejidad para acceder al inicio del sendero (calidad del camino y conexiones).
 - **Universo de discurso**: Escala $[0, 10]$ (0 = muy complejo/trocha agreste, 10 = acceso directo pavimentado).
 - **Términos lingüísticos**:
@@ -380,187 +385,149 @@ R20: SI Saturacion=Alta Y Seguridad=Riesgoso Y Clima=Seco                       
 
 ### 5.5 Salida Difusificada y Defuzzificación
 
-- **Variable de salida**: **Score de Recomendación Turística ($S_{\text{difuso}} \in [0, 10]$)**.
+- **Variable de salida**: **Score de Recomendación Turística (**$S_{\text{difuso}} \in [0, 10]$**)**.
   - Conjuntos de salida: `Muy_Baja` $[0, 2.5]$, `Baja` $[2, 4.5]$, `Media` $[4, 7]$, `Alta` $[6.5, 9]$, `Muy_Alta` $[8, 10]$.
 - **Método de Defuzzificación**: **Centroide** (Center of Gravity, CoG). Produce un valor escalar continuo entre $0.0$ y $10.0$ que cuantifica con precisión el grado de conveniencia de cada destino turístico.
 - **Rol en el Flujo General**: Este valor continuo $S_{\text{difuso}}(d)$ se calcula previamente para cada una de las 15 lomas y alimenta directamente la función de evaluación (fitness) del Algoritmo Genético.
 
 ---
 
-## 6. Algoritmo Genético
+### 6. Algoritmo Genético
 
-### 6.1 Estructura del Gen
+### 6.1 Fundamentos Conceptuales: Gen, Cromosoma y Población
 
-Cada gen representa una posición (locus) dentro del orden de visita de la ruta. El valor del gen (alelo) es el destino turístico asignado a esa posición.
+Para que el modelo sea comprensible a simple vista, el Algoritmo Genético modela el problema como la organización de un itinerario de viaje grupal:
 
-**Ejemplo de gen** (lugar 3 en la ruta):
+#### A. El Gen (La Parada Individual)
+Es la unidad mínima de información dentro de la solución:
 
+| Elemento del Gen | Concepto Biológico | Equivalente en el Proyecto | Ejemplo Concreto |
+| :--- | :--- | :--- | :--- |
+| **Locus** | Posición física en el cromosoma | Día u orden de visita en el itinerario | Posición 0 (Día 1 del viaje) |
+| **Alelo** | Variante o valor del gen | Código único de la loma asignada | `L0` |
+| **Fenotipo** | Rasgo visible manifestado | Destino turístico real que se visita | Lomas del Paraíso (Villa María del Triunfo) |
+| **Interpretación** | Información de un rasgo biológico | Instrucción operativa de viaje | *"El primer día del itinerario se visita Lomas del Paraíso"* |
 
-| Elemento                        | Valor                                       |
-| ------------------------------- | ------------------------------------------- |
-| **Locus (posición en la ruta)** | 3                                           |
-| **Significado**                 | El cuarto destino visitado en el itinerario |
-| **Alelo (destino asignado)**    | L6 — Lachay                                 |
+#### B. El Cromosoma (El Itinerario Completo: Titulares vs. Suplentes)
+El cromosoma es una lista completa con las **15 lomas de Lima**, organizada bajo una **representación basada en prefijos (Prefix-based Representation)** en dos bloques:
+1. **Ventana Activa ($K$ lomas titulares):** Las lomas que el turista **realmente va a recorrer**.
+2. **Reserva Durmiente ($15 - K$ lomas suplentes):** Lomas en lista de espera que no se visitan en este momento, pero están listas para ingresar si una mutación decide hacer un cambio de jugador.
 
+**Ejemplo de Cromosoma para un viaje de 3 días ($K = 3$):**
 
-El cromosoma es de tipo **permutación**, lo que garantiza que cada destino aparezca una única vez y elimina la necesidad de reparar rutas con destinos repetidos.
-
-### 6.2 Estructura del Cromosoma
-
-Un cromosoma es una ruta turística completa: una secuencia ordenada de $K$ destinos seleccionados del catálogo de $N = 15$ lomas, sin repetición.
-
-**Ejemplo de cromosoma** ($K = 6$ destinos):
-
-
-| Locus (orden)            | 1°                | 2°           | 3°       | 4°     | 5°         | 6°      |
-| ------------------------ | ----------------- | ------------ | -------- | ------ | ---------- | ------- |
-| **Alelo (Ruta ejemplo)** | L0                | L1           | L5       | L6     | L4         | L3      |
-| **Destino**              | Lomas del Paraíso | Carabayllo 2 | Amancaes | Lachay | Mangomarca | Manchay |
-
-
-**Representación visual del genotipo a fenotipo:**
+| Posición (Locus) | Código (Alelo) | Nombre de la Loma | Distrito | Rol en el Cromosoma | ¿El turista lo visita? |
+| :---: | :---: | :--- | :--- | :--- | :---: |
+| **0** | `L0` | Lomas del Paraíso (+ Apu Siqay) | Villa María del Triunfo | **Día 1 (Titular)** | **Sí** |
+| **1** | `L3` | Lomas de Manchay | Ate | **Día 2 (Titular)** | **Sí** |
+| **2** | `L4` | Lomas de Mangomarca | San Juan de Lurigancho | **Día 3 (Titular)** | **Sí** |
+| **3** | `L7` | Lomas de Lúcumo | Pachacámac | Suplente 1 (Lista de espera) | No |
+| **4** | `L1` | Lomas de Carabayllo 2 | Carabayllo | Suplente 2 (Lista de espera) | No |
+| **5** | `L5` | Lomas de Amancaes | Rímac | Suplente 3 (Lista de espera) | No |
+| **...** | ... | ... | ... | ... | No |
+| **14** | `L14` | La Loma Amarilla | Santiago de Surco | Suplente 12 (Lista de espera) | No |
 
 ```mermaid
-flowchart TB
-    subgraph Cromosoma["Cromosoma = Ruta Turistica Completa"]
+flowchart LR
+    subgraph Genotipo["Genotipo: Permutacion Completa N = 15"]
         direction LR
-        G1["Gen 1 : Alelo L0 Lomas del Paraiso"]
-        G2["Gen 2 : Alelo L1 Carabayllo 2"]
-        G3["Gen 3 : Alelo L5 Amancaes"]
-        G4["Gen 4 : Alelo L6 Lachay"]
-        G5["Gen 5 : Alelo L4 Mangomarca"]
-        G6["Gen 6 : Alelo L3 Manchay"]
+        subgraph Activos["Ventana Activa (Fenotipo Evaluado: K genes)"]
+            G1["Locus 0: L0"] --- G2["Locus 1: L3"] --- G3["Locus 2: L4"]
+        end
+        subgraph Reserva["Reserva Genetica (Intrones: N - K genes)"]
+            G4["Locus 3: L7"] --- G5["Locus 4: L1"] --- G6["...: L14"]
+        end
+        Activos --- Reserva
     end
 ```
 
-### 6.3 Población Inicial (50 Individuos)
+*Conclusión del Cromosoma:* La ruta evaluada para el turista es únicamente `L0 -> L3 -> L4`. Las demás 12 lomas no generan costo ni distancia, pero garantizan que el operador de cruce no tenga huecos vacíos ni lomas repetidas.
 
-Se genera una población inicial de **50 rutas candidatas**, cada una representando una posible combinación y ordenamiento de destinos. La generación es aleatoria pero respetando la restricción de no repetición.
+#### C. La Población (Los 40 Planes de Viaje Compitiendo)
+La población es el conjunto de **40 itinerarios alternativos** generados al inicio de forma aleatoria:
 
+| Individuo | Itinerario Activo ($K = 3$) | Lomas en Reserva (Suplentes) | Diagnóstico del Plan | Calidad Inicial Estimada |
+| :---: | :--- | :--- | :--- | :--- |
+| **Plan 1** | Paraíso $\to$ Manchay $\to$ Mangomarca | Lúcumo, Amancaes, Ancón, ... | Lomas cercanas en Lima Sur/Este, gasto bajo (S/ 35). | **Alta (Candidato a Campeón)** |
+| **Plan 2** | Lúcumo $\to$ Ancón $\to$ Lachay | Paraíso, Carabayllo, Primavera, ... | Muy dispersas (>120 km de viaje), pasajes muy caros. | **Baja (Se extinguirá rápido)** |
+| **Plan 3** | Carabayllo $\to$ Primavera $\to$ Amancaes | Lúcumo, Manchay, Paraíso, ... | Concentradas en Lima Norte, costo intermedio. | **Media (Mejorable con cruce)** |
+| **...** | *(37 planes adicionales generados)* | ... | ... | ... |
 
-| Ruta | Destinos                      | Fitness F(x) |
-| ---- | ----------------------------- | ------------ |
-| R0   | L11 → L0 → L6 → L1 → L5 → L14 | F(R0)        |
-| R1   | L3 → L12 → L7 → L0 → L13 → L1 | F(R1)        |
-| R2   | L4 → L8 → L2 → L10 → L6 → L9  | F(R2)        |
-| R3   | L5 → L1 → L11 → L0 → L7 → L3  | F(R3)        |
-| ...  | ...                           | ...          |
+---
 
+### 6.2 Mapeo Temporal Urbano Dinámico y Atajo Determinista
 
-*(40 rutas adicionales generadas con el mismo método aleatorio)*
+1. **Mapeo Urbano Dinámico ($K = \min(\max(2, \text{días}), 6)$):**  
+   En Lima Metropolitana, el senderismo en lomas se realiza como una excursión diurna (1 loma por día). Por tanto, para $\text{días} \ge 2$, se asigna $K = \text{días}$ acotado a un mínimo de 2 (para garantizar espacio de búsqueda combinatorio formal) y un máximo de 6 lomas.
+2. **Bifurcación de Control para Horizonte Unitario ($K = 1$):**  
+   Cuando el usuario dispone de 1 solo día, no existe un problema combinatorio de ordenamiento (espacio de solo 15 estados). El orquestador activa un **atajo determinista (shortcut en $O(N)$)**: filtra las lomas dentro del presupuesto y escoge de inmediato la de mayor score difuso, evitando sobrecosto computacional redundante de 50 generaciones bioinspiradas.
 
-**Población total**: 50 rutas, cada una con $K$ destinos seleccionados de los 15 disponibles sin repetición. La distribución inicial asegura diversidad genética para que el AG explore ampliamente el espacio de soluciones desde la primera generación.
+---
 
-### 6.4 Función de Aptitud (Fitness) — Explicación Detallada
+### 6.3 La Función Fitness (Aptitud) Explicada en Palabras
 
-#### Fundamentación Matemática
-
-El problema se formula como una **optimización combinatoria multiobjetivo escalarizada**, combinando la calidad intrínseca de los destinos evaluada por inferencia difusa, la eficiencia del recorrido geográfico (minimización de distancia) y penalizaciones cuadráticas para garantizar el estricto cumplimiento de restricciones presupuestales y temporales:
-
-1. **Scores de Calidad Difusa por Destino**: Cada loma $d_j$ cuenta con un score normalizado $S_{\text{difuso}}(d_j) \in [0, 10]$ calculado previamente por el sistema Mamdani (sintetizando baja saturación, seguridad, clima-verdor y accesibilidad).
-2. **Eficiencia de Desplazamiento**: Se busca que el orden de visita sea geográficamente coherente, minimizando la distancia euclidiana/Haversine acumulada entre paradas consecutivas.
-3. **Penalizaciones Duras Cuadráticas**: Sancionan severamente a las rutas que excedan el presupuesto monetario o los días disponibles del turista.
-
-#### Fórmula General
+Antes de cualquier fórmula matemática, el fitness representa la **calificación general del viaje (de 0 a 30 puntos)** según la siguiente regla en palabras:
 
 $$
-\boxed{F(x) = \sum_{j=1}^{K} S_{\text{difuso}}(d_j) \;-\; \beta \cdot \left( \frac{\text{DistanciaTotal}(x)}{100} \right) \;-\; \lambda_1 \cdot \Omega_{\text{presupuesto}} \;-\; \lambda_2 \cdot \Omega_{\text{tiempo}} \;-\; \lambda_3 \cdot \Omega_{\text{restricción}}}
+\mathbf{Nota\ del\ Viaje\ (Fitness)} = (\text{Belleza\ y\ Calidad\ de\ las\ Lomas}) - (\text{Desgaste\ por\ Viajar\ Lejos}) - (\text{Multa\ por\ Pasarse\ de\ Presupuesto}) - (\text{Multa\ por\ Falta\ de\ Tiempo})
+$$
+
+#### Tabla de Criterios: ¿Qué suma puntos y qué resta puntos?
+
+| Criterio Evaluado | Efecto en la Nota | ¿Cómo se calcula en palabras? | Justificación Práctica |
+| :--- | :---: | :--- | :--- |
+| **Belleza y Calidad Ecoturística** | **Suma (+)** | Suma de los scores difusos (0 a 10) de las lomas titulares. | El turista busca lomas verdes, seguras y con senderos accesibles. |
+| **Desgaste por Traslados** | **Resta (-)** | Kilómetros acumulados de viaje entre loma y loma dividido entre 100. | Viajar horas en bus agota al turista y quita tiempo de disfrute. |
+| **Multa por Exceso de Presupuesto** | **Castiga (-)** | Si gastas menos o igual que tu presupuesto, multa = 0. Si te pasas, multa proporcional al exceso al cuadrado. | El viaje debe ser pagable; si sobrepasa el dinero del usuario, pierde viabilidad. |
+| **Multa por Falta de Tiempo** | **Castiga (-)** | Si las caminatas caben en las 8h útiles por día, multa = 0. Si faltan horas, penaliza al cuadrado. | Las jornadas deben ser realizables sin sobreexigir físicamente al usuario. |
+
+#### Ejemplo Numérico Paso a Paso (Sin Fórmulas Agobiantes)
+
+Supongamos que un usuario dispone de **S/ 60.00 de presupuesto** y **3 días**.
+
+Evaluemos el **Plan 1** (`L0: Paraíso` $\to$ `L3: Manchay` $\to$ `L4: Mangomarca`):
+
+| Paso | Concepto Evaluado | Datos Reales de las Lomas | Cuenta en Palabras | Puntos Aportados |
+| :---: | :--- | :--- | :--- | :---: |
+| **1** | **Calidad de las Lomas** | Paraíso (8.5 pts) + Manchay (7.5 pts) + Mangomarca (8.0 pts) | Sumar las notas difusas de cada loma | **+24.00 pts** |
+| **2** | **Traslados en bus** | Paraíso a Manchay (7.5 km) + Manchay a Mangomarca (16.0 km) | Total 23.5 km $\implies$ Restar $23.5 / 100$ | **-0.23 pts** |
+| **3** | **Gasto del Viaje** | Entradas y pasajes: S/ 15 + S/ 10 + S/ 10 = S/ 35 | Costó S/ 35 vs Límite S/ 60 $\implies$ ¡No se pasó! | **-0.00 pts** (Sin multa) |
+| **4** | **Horas de Caminata** | Senderos: 4.5h + 3.5h + 4.0h = 12 horas totales | 12h caben en 3 días (24h útiles) $\implies$ Tiempo OK | **-0.00 pts** (Sin multa) |
+| **FINAL** | **Calificación Total** | **Fitness = 24.00 - 0.23 - 0.00 - 0.00** | Nota global del itinerario | **23.77 puntos** |
+
+*Comparación:* Si otro plan gastara S/ 90 (50% de sobrecosto), el algoritmo le cobraría una multa de $-6.25$ puntos y su nota caería a **17.52**. En el torneo, el Plan 1 (23.77 pts) vencerá fácilmente al plan caro.
+
+#### Formulación Matemática con Escalado Adimensional Relativo
+
+Para formalizar lo anterior y evitar el *Fitness Scaling Problem*, se implementan barreras relativas:
+
+$$
+\boxed{F(x) = \sum_{j=1}^{K} S_{\text{difuso}}(d_j) \;-\; \beta \cdot \left( \frac{\text{DistanciaTotal}(x)}{100} \right) \;-\; \lambda_1 \cdot \left(\frac{\Delta_{\text{presupuesto}}}{\text{Presupuesto}}\right)^2 \;-\; \lambda_2 \cdot \left(\frac{\Delta_{\text{tiempo}}}{\text{TiempoDisponible}}\right)^2 \;-\; \Omega_{\text{unicidad}}}
 $$
 
 Donde:
+- $\Delta_{\text{presupuesto}} = \max(0,\; \text{CostoTotal}(x) - \text{Presupuesto})$ con $\lambda_1 = 25.0$.
+- $\Delta_{\text{tiempo}} = \max(0,\; \text{HorasTotales}(x) - \text{Días} \times 8.0)$ con $\lambda_2 = 25.0$.
+- $\Omega_{\text{unicidad}} = 1000 \cdot (K - |\text{set}(x)|)$ como salvaguarda de unicidad.
 
-- $x = (d_1, d_2, \dots, d_K)$ es un cromosoma (ruta ordenada de $K$ destinos sin repetición).
-- $S_{\text{difuso}}(d_j)$ es el score de recomendación difuso del destino $d_j \in [0, 10]$.
-- $\text{DistanciaTotal}(x) = \sum_{j=1}^{K-1} \text{dist}(d_j, d_{j+1})$ es la distancia total de traslado en km entre destinos consecutivos.
-- $100$ es el factor de escala que normaliza los kilómetros a una magnitud comparable con los puntajes de destino ($0$ a $6$).
-- $\beta$ es el coeficiente de penalización por distancia ($\beta = 1.0$).
-- $\lambda_1, \lambda_2, \lambda_3$ son factores de penalización para restricciones duras ($\lambda_1 = 1.0, \lambda_2 = 2.0, \lambda_3 = 1.0$).
+---
 
-#### Desglose de Componentes
+### 6.4 Operadores Genéticos y Dinámica Evolutiva
 
-**A) Términos Deseables (Beneficios y Calidad Turística)**
+| Operador Genético | Analogía Biológica | Analogía en el Viaje Turístico | ¿Qué hace exactamente en el código? |
+| :--- | :--- | :--- | :--- |
+| **Selección por Torneo** | Supervivencia del más apto | Casting: 3 planes al azar compiten y clasifica el de mejor nota | Toma 3 cromosomas de la población y selecciona el de mayor fitness ($k_{\text{torneo}}=3$). |
+| **Cruce (Order Crossover)** | Reproducción sexual | Fusión de ideas: combinar las mejores paradas de dos planes | El hijo hereda un tramo del Padre 1 y se completa con el orden del Padre 2 sobre los 15 alelos. |
+| **Mutación Swap (Reordenar)** | Mutación genética puntual | Cambiar el orden de dos días para evitar tráfico en Lima | Intercambia dos posiciones dentro de la ventana activa para acortar distancia (prob. 40%). |
+| **Mutación Reemplazo (Sustituir)** | Variación alélica | Cambio de jugador: sacar una loma cara y meter una suplente económica | Intercambia un gen activo con un gen de la reserva durmiente (prob. 40%). |
+| **Mutación Inversión (2-Opt)** | Reordenamiento cromosómico | Desenredo de ruta: invertir un tramo que hacía un cruce en zigzag | Invierte un subsegmento continuo dentro del viaje activo (prob. 20%). |
+| **Elitismo** | Preservación del linaje campeón | El campeón clasifica directo a la final sin jugar eliminatorias | Copia los 2 mejores planes intactos a la siguiente generación ($E=2$). |
 
-1. **Beneficio Ecoturístico Acumulado:**
-   $$F_{\text{calidad}}(x) = \sum_{j=1}^{K} S_{\text{difuso}}(d_j)$$
-   Recompensa la inclusión de lomas que obtuvieron alto puntaje en la inferencia difusa (priorizando lomas seguras, con baja saturación, óptimo verdor por garúa y buen acceso).
-
-2. **Costo de Desplazamiento (a minimizar):**
-   $$f_{\text{distancia}}(x) = \beta \cdot \frac{\text{DistanciaTotal}(x)}{100}$$
-   Evita trayectos dispersos o zigzagueantes a lo largo de Lima Metropolitana (ej. viajar de Ancón al norte hasta Villa María al sur repetidamente), favoreciendo itinerarios geográficamente agrupados.
-
-**B) Penalizaciones Duras (Restricciones Innegociables)**
-
-**Ω₁ — Presupuesto:**
-
-$$
-\Omega_{\text{presupuesto}} = \max\left(0,\; \text{CostoTotal}(x) - \text{Presupuesto}\right)^2
-$$
-
-- **Qué hace**: Si la suma de entradas y pasajes de la ruta supera el presupuesto asignado por el usuario, se aplica una penalización cuadrática progresiva.
-- **Operaciones**: Resta, comparación (`max`), potenciación cuadrática.
-
-**Ω₂ — Tiempo disponible:**
-
-$$
-\Omega_{\text{tiempo}} = \max\left(0,\; \text{TiempoTotal}(x) - \text{DíasDisponibles} \times \text{HorasDiarias}\right)^2
-$$
-
-- **Qué hace**: Si la sumatoria de tiempos de caminata y traslados excede las horas útiles de los días disponibles declarados, la ruta es sancionada.
-- **Operaciones**: Multiplicación, resta, comparación, potenciación cuadrática.
-
-**Ω₃ — Restricción de Temporada / Incompatibilidad Estricta:**
-
-$$
-\Omega_{\text{restricción}} = \sum_{d_j \in x} \mathbb{I}(d_j \text{ en condición inviable o sendero cerrado}) \times 1000
-$$
-
-- **Qué hace**: Descarta inmediatamente cualquier ruta que incluya destinos con cierres temporales o inaccesibilidad absoluta mediante un castigo insalvable de 1000 puntos.
-
-#### Ejemplo Concreto de Evaluación de una Ruta Candidata
-
-Supongamos que el AG evalúa la ruta candidata **R7** ($K = 4$ destinos: L0 → L5 → L4 → L7):
-
-| Componente | Cálculo / Detalle | Valor Aportado |
-| :--- | :--- | :--- |
-| Destino 1: L0 (Paraíso) | $S_{\text{difuso}}(\text{L0})$ (alta seguridad, baja saturación, garúa) | $+8.80$ |
-| Destino 2: L5 (Amancaes) | $S_{\text{difuso}}(\text{L5})$ (fácil acceso, verdor flor amancaes) | $+7.50$ |
-| Destino 3: L4 (Mangomarca) | $S_{\text{difuso}}(\text{L4})$ (arqueología, afluencia moderada) | $+7.90$ |
-| Destino 4: L7 (Lúcumo) | $S_{\text{difuso}}(\text{L7})$ (pinturas rupestres, sendero oficial) | $+8.10$ |
-| **Suma de Calidad Difusa** | $8.80 + 7.50 + 7.90 + 8.10$ | **$+32.30$** |
-| Distancia Total Simulada | $58 \text{ km}$ entre paradas consecutivas | $- (1.0 \times 58 / 100) = \mathbf{-0.58}$ |
-| Costo Total de Ruta | S/ 38.00 (pasajes + ingresos) vs. Presupuesto S/ 50.00 | $\Omega_{\text{presupuesto}} = \max(0, 38-50)^2 = \mathbf{0}$ |
-| Tiempo Total Requerido | 2 días efectivos vs. 3 días disponibles | $\Omega_{\text{tiempo}} = \max(0, 2-3)^2 = \mathbf{0}$ |
-| Infracciones de Temporada | Ninguna (todas operativas en garúa) | $\Omega_{\text{restricción}} = \mathbf{0}$ |
-| **Fitness Final F(R7)** | $32.30 - 0.58 - 0 - 0 - 0$ | **$\mathbf{F(R7) = 31.72}$** |
-
-#### Resumen de Operaciones Matemáticas Utilizadas
-
-| Operación | Rol y Justificación dentro del Algoritmo Genético |
-| :--- | :--- |
-| **Suma ($\sum$)** | Agregación de scores difusos $\sum S_{\text{difuso}}(d_j)$ y acumulación de tramos de distancia. |
-| **Resta ($-$)** | Descuento por kilometraje de traslado y evaluación de superación de límites $(\text{Real} - \text{Límite})$. |
-| **División ($/$)** | Normalización de distancia $(\text{km} / 100)$ para mantener escala homogénea frente a los puntajes. |
-| **Potenciación ($^2$)** | Penalización cuadrática progresiva: excesos pequeños generan castigos leves; excesos grandes vuelven la ruta inviable. |
-| **Comparación ($\max$)** | Filtro de umbral $\max(0, \Delta)$ para activar la penalización únicamente cuando se viola la restricción. |
-| **Función Indicadora ($\mathbb{I}$)** | Detección binaria de violaciones críticas (destinos cerrados o fuera de temporada). |
-
-
-### 6.5 Operadores Genéticos y Dinámica Evolutiva
-
-1. **Inicialización**: Se genera una población de 50 rutas con genes muestreados aleatoriamente del catálogo de 15 destinos, sin repetición.
-2. **Selección de Progenitores**: Se aplica **selección por torneo de tamaño** $k=3$. Se eligen 3 rutas al azar y la mejor (mayor fitness) pasa a la siguiente generación. Este método mantiene presión selectiva controlada y previene convergencia prematura.
-3. **Cruce (Crossover)**: Se implementa **Order Crossover (OX)**. Se selecciona un subsegmento de un padre y se preserva el orden relativo de los destinos restantes del otro padre. Esto garantiza que los hijos sean permutaciones válidas.
-4. **Mutación** (probabilidad $p_m$):
-   - **Mutación Swap**: Se intercambian dos posiciones aleatorias del cromosoma.
-   - **Mutación de inserción**: Se toma un destino de una posición y se inserta en otra.
-5. **Elitismo**: Los mejores $E$ individuos de cada generación se transfieren intactos a la siguiente generación, garantizando que el mejor fitness histórico nunca decaiga.
-6. **Criterio de Parada**: El proceso evolutivo concluye al alcanzar el número máximo de generaciones o cuando se detecta estancamiento del fitness habiendo alcanzado cero penalizaciones duras.
 
 **Representación visual de una generación:**
 
 ```mermaid
 flowchart TB
-    P["Poblacion 50 rutas"] --> E["Evaluar Fitness[[ORCA_RICH_MD:813d4f9d0d47320b86f57b967ababf91:inline-html:%3Cbr%2F%3E]]F(x) = Σwᵢ·Sᵢ - Ω"]
+    P["Poblacion 50 rutas"] --> E["Evaluar Fitness F(x) = Σwᵢ·Sᵢ - Ω"]
     E --> S["Seleccion por Torneo k=3"]
     S --> C["Crossover OX"]
     C --> M["Mutacion Swap/Insercion"]
@@ -631,12 +598,12 @@ Se eligió **Streamlit + folium** en lugar de React + shadcn + Mapbox por las si
 
 | Librería               | Función                                |
 | ---------------------- | -------------------------------------- |
-| `streamlit`            | Framework de la aplicación web          |
-| `streamlit-folium`     | Integración de folium en Streamlit      |
-| `folium`               | Mapa interactivo con OpenStreetMap      |
-| `scikit-fuzzy`         | Sistema de inferencia difusa (Mamdani)  |
-| `openai` o `anthropic` | API del LLM                             |
-| `json`                 | Carga del catálogo de destinos          |
+| `streamlit`            | Framework de la aplicación web         |
+| `streamlit-folium`     | Integración de folium en Streamlit     |
+| `folium`               | Mapa interactivo con OpenStreetMap     |
+| `scikit-fuzzy`         | Sistema de inferencia difusa (Mamdani) |
+| `openai` o `anthropic` | API del LLM                            |
+| `json`                 | Carga del catálogo de destinos         |
 
 
 ---

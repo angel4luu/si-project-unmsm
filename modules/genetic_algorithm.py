@@ -3,9 +3,10 @@ Modulo de Optimizacion Heuristica: Algoritmo Genetico.
 
 Este modulo resuelve el problema combinatorio de seleccion y ordenamiento de rutas
 (Orienteering Problem / Selective TSP) mediante un Algoritmo Genetico multiobjetivo:
-- Maximiza la calidad ecoturistica de los destinos (Scores Difusos Mamdani).
-- Minimiza la distancia geografica total de traslado (Formula de Haversine).
-- Penaliza cuadraticamente el exceso de presupuesto y tiempo disponible.
+- Representacion cromosomica: Permutacion completa de N=15 alelos con ventana activa K.
+- Operadores geneticos: Order Crossover (OX) estandar, mutaciones compuestas y elitismo.
+- Funcion de aptitud: Escalado adimensional relativo para presupuesto y tiempo.
+- Atajo determinista: Bifurcacion directa en O(N) para horizonte unitario (K = 1).
 """
 
 import os
@@ -47,7 +48,8 @@ def distancia_haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> f
 
 class LomasGeneticOptimizer:
     """
-    Motor de optimizacion heuristica basado en Algoritmo Genetico para rutas en lomas.
+    Motor de optimizacion heuristica basado en Algoritmo Genetico con cromosoma
+    de longitud completa (N=15) y ventana activa K.
     """
 
     def __init__(
@@ -64,8 +66,8 @@ class LomasGeneticOptimizer:
         elitismo: int = 2,
         torneo_k: int = 3,
         beta_distancia: float = 1.0,
-        lambda_presupuesto: float = 1.0,
-        lambda_tiempo: float = 1.0,
+        lambda_presupuesto: float = 25.0,
+        lambda_tiempo: float = 25.0,
         semilla: Optional[int] = None
     ):
         if semilla is not None:
@@ -74,10 +76,11 @@ class LomasGeneticOptimizer:
         self.destinos = destinos
         self.destinos_dict = {d["id"]: d for d in destinos}
         self.todos_ids = [d["id"] for d in destinos]
+        self.n_total = len(self.todos_ids)
         self.scores_difusos = scores_difusos
 
-        # Restringir K al rango valido [1, len(destinos)]
-        self.k = max(1, min(int(k), len(destinos)))
+        # Restringir K al rango valido [1, n_total]
+        self.k = max(1, min(int(k), self.n_total))
         self.presupuesto = float(presupuesto)
         self.dias = max(1, int(dias_disponibles))
 
@@ -94,9 +97,17 @@ class LomasGeneticOptimizer:
 
     def _generar_individuo(self) -> List[str]:
         """
-        Genera un cromosoma inicial: subconjunto de K destinos aleatorios sin repeticion.
+        Genera un cromosoma de permutacion completa de los N=15 alelos del catalogo.
+        Los primeros K genes constituyen la ventana activa (fenotipo).
+        Los genes restantes [K:15] actuan como reserva genetica inactiva.
         """
-        return random.sample(self.todos_ids, self.k)
+        return random.sample(self.todos_ids, self.n_total)
+
+    def obtener_ruta_activa(self, individuo: List[str]) -> List[str]:
+        """
+        Extrae la ventana activa de K destinos (fenotipo evaluado).
+        """
+        return individuo[:self.k]
 
     def calcular_distancia_ruta(self, ruta: List[str]) -> float:
         """
@@ -113,30 +124,34 @@ class LomasGeneticOptimizer:
             distancia_total += distancia_haversine(c1["lat"], c1["lon"], c2["lat"], c2["lon"])
         return distancia_total
 
-    def fitness(self, ruta: List[str]) -> float:
+    def fitness(self, individuo_o_ruta: List[str]) -> float:
         """
-        Funcion de aptitud multiobjetivo con penalizaciones cuadraticas.
-        F(x) = Beneficio_Difuso - beta*(Distancia/100) - lambda1*Omega_pres - lambda2*Omega_tiempo - Omega_unicidad
+        Funcion de aptitud multiobjetivo con penalizaciones relativas adimensionales.
+        F(x) = Beneficio_Difuso - beta*(Distancia/100) - lambda1*(DeltaPres/Pres)^2 - lambda2*(DeltaTiempo/Tiempo)^2 - Omega_unicidad
         """
+        # Extraer ventana activa (fenotipo)
+        ruta = self.obtener_ruta_activa(individuo_o_ruta)
+
         # 1. Beneficio acumulado por scores difusos
         beneficio_difuso = sum(self.scores_difusos.get(did, 5.0) for did in ruta)
 
-        # 2. Descuento por distancia geografica de traslado
+        # 2. Descuento por distancia geografica de traslado entre paradas
         distancia_km = self.calcular_distancia_ruta(ruta)
         costo_desplazamiento = self.beta_distancia * (distancia_km / 100.0)
 
-        # 3. Penalizacion cuadratica por exceso de presupuesto
+        # 3. Penalizacion relativa adimensional por exceso de presupuesto
         costo_total = sum(self.destinos_dict[did].get("costo_estimado", 15.0) for did in ruta)
         exceso_presupuesto = max(0.0, costo_total - self.presupuesto)
-        omega_presupuesto = self.lambda_presupuesto * (exceso_presupuesto ** 2)
+        denominador_presupuesto = max(1.0, self.presupuesto)
+        omega_presupuesto = self.lambda_presupuesto * ((exceso_presupuesto / denominador_presupuesto) ** 2)
 
-        # 4. Penalizacion cuadratica por tiempo disponible (8 horas utiles por dia)
+        # 4. Penalizacion relativa adimensional por tiempo disponible (8h utiles por dia)
         horas_totales = sum(self.destinos_dict[did].get("tiempo_estimado_horas", 4.0) for did in ruta)
-        horas_disponibles = self.dias * 8.0
+        horas_disponibles = max(1.0, self.dias * 8.0)
         exceso_tiempo = max(0.0, horas_totales - horas_disponibles)
-        omega_tiempo = self.lambda_tiempo * (exceso_tiempo ** 2)
+        omega_tiempo = self.lambda_tiempo * ((exceso_tiempo / horas_disponibles) ** 2)
 
-        # 5. Penalizacion estricta por destinos duplicados (garantia de unicidad)
+        # 5. Penalizacion de seguridad por duplicados en la ventana activa
         destinos_unicos = len(set(ruta))
         omega_unicidad = 1000.0 * (len(ruta) - destinos_unicos)
 
@@ -153,44 +168,28 @@ class LomasGeneticOptimizer:
 
     def _crossover_ox(self, padre1: List[str], padre2: List[str]) -> Tuple[List[str], List[str]]:
         """
-        Order Crossover (OX) adaptado a subconjuntos de longitud K.
-        Preserva un segmento continuo del primer padre y completa los genes
-        restantes respetando el orden relativo del segundo padre sin generar duplicados.
+        Order Crossover (OX) clasico de permutacion completa sobre los N=15 alelos.
+        Garantiza que ambos descendientes sean permutaciones estrictas sin duplicados.
         """
-        if self.k <= 2:
-            return list(padre1), list(padre2)
-
-        # Seleccionar dos puntos de corte aleatorios
-        i1, i2 = sorted(random.sample(range(self.k), 2))
+        n = self.n_total
+        i1, i2 = sorted(random.sample(range(n), 2))
 
         def cruzar_un_lado(p1: List[str], p2: List[str]) -> List[str]:
-            hijo = [None] * self.k
+            hijo = [None] * n
             # Heredar segmento continuo de p1
             hijo[i1:i2 + 1] = p1[i1:i2 + 1]
             genes_en_hijo = set(p1[i1:i2 + 1])
 
-            # Orden de busqueda en p2 comenzando inmediatamente despues de i2
+            # Recorrer p2 en orden circular a partir de i2 + 1
             candidatos_p2 = p2[i2 + 1:] + p2[:i2 + 1]
-            posiciones_libres = [idx for idx in range(self.k) if hijo[idx] is None]
+            posiciones_libres = [idx for idx in range(n) if hijo[idx] is None]
 
             pos_idx = 0
             for gen in candidatos_p2:
-                if gen not in genes_en_hijo and pos_idx < len(posiciones_libres):
+                if gen not in genes_en_hijo:
                     hijo[posiciones_libres[pos_idx]] = gen
                     genes_en_hijo.add(gen)
                     pos_idx += 1
-
-            # Si faltan genes por completar (debido a alta interseccion de padres)
-            if pos_idx < len(posiciones_libres):
-                disponibles = [g for g in self.todos_ids if g not in genes_en_hijo]
-                random.shuffle(disponibles)
-                for gen in disponibles:
-                    if pos_idx < len(posiciones_libres):
-                        hijo[posiciones_libres[pos_idx]] = gen
-                        genes_en_hijo.add(gen)
-                        pos_idx += 1
-                    else:
-                        break
 
             return hijo
 
@@ -198,60 +197,88 @@ class LomasGeneticOptimizer:
         hijo2 = cruzar_un_lado(padre2, padre1)
         return hijo1, hijo2
 
-    def _mutacion_swap(self, individuo: List[str]) -> List[str]:
-        """
-        Mutacion por intercambio: Permuta las posiciones de dos destinos en la ruta.
-        Optimiza el orden de visita para reducir la distancia de recorrido.
-        """
-        if len(individuo) < 2:
-            return list(individuo)
-        hijo = list(individuo)
-        i1, i2 = random.sample(range(len(hijo)), 2)
-        hijo[i1], hijo[i2] = hijo[i2], hijo[i1]
-        return hijo
-
-    def _mutacion_reemplazo(self, individuo: List[str]) -> List[str]:
-        """
-        Mutacion por sustitucion: Reemplaza una loma de la ruta por otra del catalogo no visitada.
-        Permite explorar nuevas combinaciones de destinos para optimizar el score difuso y costo.
-        """
-        genes_actuales = set(individuo)
-        disponibles = [did for did in self.todos_ids if did not in genes_actuales]
-        if not disponibles:
-            return list(individuo)
-
-        hijo = list(individuo)
-        pos = random.randrange(len(hijo))
-        nuevo_destino = random.choice(disponibles)
-        hijo[pos] = nuevo_destino
-        return hijo
-
-    def _mutacion_inversion(self, individuo: List[str]) -> List[str]:
-        """
-        Mutacion por inversion (2-Opt local): Invierte un subsegmento de la ruta.
-        Corrige cruces en el trazado geografico de la ruta.
-        """
-        if len(individuo) < 3:
-            return self._mutacion_swap(individuo)
-        hijo = list(individuo)
-        i1, i2 = sorted(random.sample(range(len(hijo)), 2))
-        hijo[i1:i2 + 1] = reversed(hijo[i1:i2 + 1])
-        return hijo
-
     def _mutar(self, individuo: List[str]) -> List[str]:
         """
-        Aplica uno de los operadores de mutacion de acuerdo a sus probabilidades relativas.
+        Aplica mutacion adaptativa en el cromosoma de 15 alelos:
+        - Swap Activo-Reserva: Sustituye una loma de la ventana activa por una de reserva.
+        - Swap Activo-Activo: Reordena la secuencia de paradas activas para optimizar distancia.
+        - Inversion 2-Opt: Invierte un subsegmento activo para desenredar cruces de ruta.
         """
         if random.random() > self.prob_mutacion:
             return list(individuo)
 
+        hijo = list(individuo)
         r = random.random()
-        if r < 0.40:
-            return self._mutacion_swap(individuo)
-        elif r < 0.80:
-            return self._mutacion_reemplazo(individuo)
+
+        # Estrategia 1: Swap Activo-Reserva (Sustitucion de destino, prob 40%)
+        if r < 0.40 and self.k < self.n_total:
+            idx_activo = random.randrange(self.k)
+            idx_reserva = random.randrange(self.k, self.n_total)
+            hijo[idx_activo], hijo[idx_reserva] = hijo[idx_reserva], hijo[idx_activo]
+
+        # Estrategia 2: Swap Activo-Activo (Reordenamiento de ruta, prob 40%)
+        elif r < 0.80 and self.k >= 2:
+            i1, i2 = random.sample(range(self.k), 2)
+            hijo[i1], hijo[i2] = hijo[i2], hijo[i1]
+
+        # Estrategia 3: Inversion 2-Opt Activa (Optimizacion de tramo, prob 20%)
+        elif self.k >= 3:
+            i1, i2 = sorted(random.sample(range(self.k), 2))
+            hijo[i1:i2 + 1] = reversed(hijo[i1:i2 + 1])
+
+        # Caso por defecto si K=1 o condiciones no aplicaron
         else:
-            return self._mutacion_inversion(individuo)
+            i1, i2 = random.sample(range(self.n_total), 2)
+            hijo[i1], hijo[i2] = hijo[i2], hijo[i1]
+
+        return hijo
+
+    def _atajo_determinista_k1(self) -> Dict[str, Any]:
+        """
+        Bifurcacion de control para horizonte unitario (K = 1).
+        Selecciona de forma determinista la loma con mayor score difuso respetando presupuesto.
+        """
+        candidatos_presupuesto = [
+            d for d in self.destinos
+            if d.get("costo_estimado", 15.0) <= self.presupuesto
+        ]
+
+        universo = candidatos_presupuesto if candidatos_presupuesto else self.destinos
+        mejor_destino = max(universo, key=lambda d: self.scores_difusos.get(d["id"], 0.0))
+        mejor_id = mejor_destino["id"]
+
+        # Construir cromosoma completo con el mejor gen en la posicion 0
+        cromosoma = [mejor_id] + [did for did in self.todos_ids if did != mejor_id]
+        fit_final = self.fitness(cromosoma)
+
+        historial = [{
+            "generacion": 1,
+            "mejor_fitness": round(fit_final, 3),
+            "promedio_fitness": round(fit_final, 3),
+            "costo_mejor": round(mejor_destino.get("costo_estimado", 15.0), 2),
+            "distancia_mejor": 0.0
+        }]
+
+        grafica = (
+            "  Curva de Convergencia del Fitness (Generaciones):\n"
+            f"  {fit_final:6.2f} ^------------------------------------------\n"
+            f"  {fit_final:6.2f} | ******************************************\n"
+            "         +---------------------------------------->\n"
+            "         [Atajo Determinista K=1: Seleccion Directa]"
+        )
+
+        return {
+            "ruta_ids": [mejor_id],
+            "destinos_ordenados": [mejor_destino],
+            "fitness": round(fit_final, 3),
+            "costo_total": round(mejor_destino.get("costo_estimado", 15.0), 2),
+            "distancia_total_km": 0.0,
+            "tiempo_estimado_horas": round(mejor_destino.get("tiempo_estimado_horas", 4.0), 2),
+            "tramos": [],
+            "historial": historial,
+            "grafica_ascii": grafica,
+            "metodo": "atajo_determinista"
+        }
 
     def _dibujar_grafica_ascii(self, historial: List[Dict[str, Any]], ancho: int = 40, alto: int = 8) -> str:
         """
@@ -266,7 +293,6 @@ class LomasGeneticOptimizer:
         max_v = max(valores)
         rango = max_v - min_v if max_v != min_v else 1.0
 
-        # Muestrear a lo largo del ancho disponible
         n_puntos = len(valores)
         muestras = []
         for col in range(ancho):
@@ -299,8 +325,14 @@ class LomasGeneticOptimizer:
 
     def optimizar(self, verbose: bool = False) -> Dict[str, Any]:
         """
-        Ejecuta el ciclo evolutivo completo del Algoritmo Genetico.
+        Ejecuta el ciclo evolutivo del Algoritmo Genetico o el atajo determinista si K=1.
         """
+        # Bifurcacion de control para K = 1
+        if self.k == 1:
+            if verbose:
+                print("  [Bifurcacion K=1] Atajo determinista activado (seleccion directa O(N)).")
+            return self._atajo_determinista_k1()
+
         poblacion = [self._generar_individuo() for _ in range(self.tam_poblacion)]
         mejor_historico = None
         mejor_fitness_historico = -float("inf")
@@ -318,9 +350,10 @@ class LomasGeneticOptimizer:
                 mejor_fitness_historico = fit_mejor_gen
                 mejor_historico = list(mejor_gen)
 
-            # Registrar metricas de la generacion
-            costo_gen = sum(self.destinos_dict[did].get("costo_estimado", 15.0) for did in mejor_historico)
-            dist_gen = self.calcular_distancia_ruta(mejor_historico)
+            # Registrar metricas de la generacion sobre la ventana activa
+            ruta_mejor = self.obtener_ruta_activa(mejor_historico)
+            costo_gen = sum(self.destinos_dict[did].get("costo_estimado", 15.0) for did in ruta_mejor)
+            dist_gen = self.calcular_distancia_ruta(ruta_mejor)
 
             historial.append({
                 "generacion": gen,
@@ -357,18 +390,19 @@ class LomasGeneticOptimizer:
 
             poblacion = nueva_poblacion
 
-        # Calculo de metricas finales de la mejor solucion
-        costo_final = sum(self.destinos_dict[did].get("costo_estimado", 15.0) for did in mejor_historico)
-        horas_final = sum(self.destinos_dict[did].get("tiempo_estimado_horas", 4.0) for did in mejor_historico)
-        distancia_final = self.calcular_distancia_ruta(mejor_historico)
+        # Extraer fenotipo optimo
+        ruta_final = self.obtener_ruta_activa(mejor_historico)
+        costo_final = sum(self.destinos_dict[did].get("costo_estimado", 15.0) for did in ruta_final)
+        horas_final = sum(self.destinos_dict[did].get("tiempo_estimado_horas", 4.0) for did in ruta_final)
+        distancia_final = self.calcular_distancia_ruta(ruta_final)
         grafica_ascii = self._dibujar_grafica_ascii(historial)
 
         # Desglose tramo a tramo
         tramos = []
-        if len(mejor_historico) > 1:
-            for i in range(len(mejor_historico) - 1):
-                d_origen = self.destinos_dict[mejor_historico[i]]
-                d_destino = self.destinos_dict[mejor_historico[i + 1]]
+        if len(ruta_final) > 1:
+            for i in range(len(ruta_final) - 1):
+                d_origen = self.destinos_dict[ruta_final[i]]
+                d_destino = self.destinos_dict[ruta_final[i + 1]]
                 c1 = d_origen["coordenadas"]
                 c2 = d_destino["coordenadas"]
                 d_km = distancia_haversine(c1["lat"], c1["lon"], c2["lat"], c2["lon"])
@@ -379,15 +413,17 @@ class LomasGeneticOptimizer:
                 })
 
         return {
-            "ruta_ids": mejor_historico,
-            "destinos_ordenados": [self.destinos_dict[did] for did in mejor_historico],
+            "ruta_ids": ruta_final,
+            "destinos_ordenados": [self.destinos_dict[did] for did in ruta_final],
+            "cromosoma_completo": mejor_historico,
             "fitness": round(mejor_fitness_historico, 3),
             "costo_total": round(costo_final, 2),
             "distancia_total_km": round(distancia_final, 2),
             "tiempo_estimado_horas": round(horas_final, 2),
             "tramos": tramos,
             "historial": historial,
-            "grafica_ascii": grafica_ascii
+            "grafica_ascii": grafica_ascii,
+            "metodo": "algoritmo_genetico"
         }
 
 
@@ -404,6 +440,7 @@ def optimizar_ruta_lomas(
 ) -> Dict[str, Any]:
     """
     Punto de entrada estandar para ejecutar la optimizacion por Algoritmo Genetico.
+    Mantiene compatibilidad total con main.py y tests.
     """
     opt = LomasGeneticOptimizer(
         destinos=destinos,
@@ -449,14 +486,14 @@ def main():
         for d in destinos
     }
 
-    print("  MODULO HEURISTICO: OPTIMIZACION MEDIANTE ALGORITMO GENETICO")
+    print("  MODULO HEURISTICO: OPTIMIZACION MEDIANTE ALGORITMO GENETICO\n")
     print(f"  Parametros de Entrada:")
     print(f"  - Destinos a seleccionar (K):  {args.k}")
     print(f"  - Presupuesto maximo:         S/ {args.presupuesto:.2f}")
     print(f"  - Dias disponibles:           {args.dias}")
     print(f"  - Generaciones:               {args.gen}")
     print(f"  - Tamano de Poblacion:        {args.pop}")
-    print("\n\n")
+    print("\n")
     print("  Iniciando proceso evolutivo...")
 
     opt = LomasGeneticOptimizer(
@@ -472,10 +509,11 @@ def main():
 
     resultado = opt.optimizar(verbose=not args.silencioso)
 
-    print("\n\n")
+    print("\n")
     print(resultado["grafica_ascii"])
-    print("\n\n")
+    print("\n")
     print("  RESULTADOS DE LA RUTA OPTIMIZADA:")
+    print(f"  - Metodo de Resolucion:    {resultado.get('metodo', 'algoritmo_genetico')}")
     print(f"  - Secuencia de IDs:        {' -> '.join(resultado['ruta_ids'])}")
     print(f"  - Aptitud Final (Fitness): {resultado['fitness']:.3f}")
     print(f"  - Costo Total Estimado:    S/ {resultado['costo_total']:.2f} (Limite: S/ {args.presupuesto:.2f})")

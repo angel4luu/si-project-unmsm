@@ -42,40 +42,100 @@ Debido a que el sistema debe responder en menos de un segundo en un entorno inte
 
 ## 2. Estructura Cromosomica y Espacio de Soluciones
 
-### 2.1 Representacion del Gen y Locus
+### 2.1 El Gen (La Parada Individual)
 
-El genotipo de cada solucion se modela como un **cromosoma de permutacion de longitud fija** $K$:
+El gen es la unidad basica y minima de informacion dentro de la solucion:
 
-- **Locus (**$i \in \{0, 1, \dots, K-1\}$**):** Representa el orden cronologico de visita (parada 1, parada 2, ..., parada $K$).
-- **Alelo (**$g_i \in \{L_0, L_1, \dots, L_{14}\}$**):** Identificador unico del destino turistico asignado a dicha posicion.
+| Elemento del Gen | Concepto Biologico | Equivalente en el Proyecto | Ejemplo Concreto |
+| :--- | :--- | :--- | :--- |
+| **Locus** | Posicion fisica en el cromosoma | Dia u orden de visita en el itinerario | Posicion 0 (Dia 1 del viaje) |
+| **Alelo** | Variante o valor del gen | Codigo unico de la loma asignada | `L0` |
+| **Fenotipo** | Rasgo visible manifestado | Destino turistico real que se visita | Lomas del Paraiso (Villa Maria del Triunfo) |
+| **Interpretacion** | Informacion de un rasgo biologico | Instruccion operativa de viaje | *"El primer dia del itinerario se visita Lomas del Paraiso"* |
+
+### 2.2 El Cromosoma (Longitud Completa N = 15 con Ventana Activa K)
+
+Para resolver de forma unificada la seleccion de destinos y el ordenamiento de paradas sin generar alelos duplicados ni huecos vacios, se implementa una **representacion basada en prefijos (Prefix-based Representation)**:
+
+- **Genotipo (Cromosoma Global):** Una permutacion completa de los $N = 15$ alelos del catalogo ($L_0, L_1, \dots, L_{14}$).
+- **Fenotipo (Ventana Activa $K$):** La ruta evaluada y recomendada corresponde a los primeros $K$ genes (`individuo[:K]`).
+- **Reserva Genetica Durmiente (Intrones):** Los genes restantes desde el indice $K$ hasta el 14 constituyen la reserva genetica. Un intercambio mutacional entre la ventana activa y la reserva introduce nuevos destinos en el fenotipo (exploracion de catalogo).
+
+**Tabla del Cromosoma para un viaje de 3 dias ($K = 3$):**
+
+| Posicion (Locus) | Codigo (Alelo) | Nombre de la Loma | Distrito | Rol en el Cromosoma | ¿El turista lo visita? |
+| :---: | :---: | :--- | :--- | :--- | :---: |
+| **0** | `L0` | Lomas del Paraiso (+ Apu Siqay) | Villa Maria del Triunfo | **Dia 1 (Titular)** | **Si** |
+| **1** | `L3` | Lomas de Manchay | Ate | **Dia 2 (Titular)** | **Si** |
+| **2** | `L4` | Lomas de Mangomarca | San Juan de Lurigancho | **Dia 3 (Titular)** | **Si** |
+| **3** | `L7` | Lomas de Lucumo | Pachacamac | Suplente 1 (Lista de espera) | No |
+| **4** | `L1` | Lomas de Carabayllo 2 | Carabayllo | Suplente 2 (Lista de espera) | No |
+| **5** | `L5` | Lomas de Amancaes | Rimac | Suplente 3 (Lista de espera) | No |
+| **...** | ... | ... | ... | ... | No |
+| **14** | `L14` | La Loma Amarilla | Santiago de Surco | Suplente 12 (Lista de espera) | No |
 
 ```text
-Locus:        0         1         2         ...     K-1
-         +---------+---------+---------+-------+---------+
-Alelos:  |   L4    |   L3    |   L0    |  ...  |   L7    |
-         +---------+---------+---------+-------+---------+
-Destino: Mangomarca  Manchay   Paraiso          Lucumo
+Locus:        0         1         2     |     3         4       ...     14
+         +---------+---------+---------+ +---------+---------+-------+---------+
+Alelos:  |   L4    |   L3    |   L0    | |   L7    |   L1    |  ...  |   L14   |
+         +---------+---------+---------+ +---------+---------+-------+---------+
+Estado:  <----- VENTANA ACTIVA K ----->   <-------- RESERVA DURMIENTE --------->
+Destino: Mangomarca  Manchay   Paraiso       Lucumo   Carabayllo      Loma Amarilla
 ```
 
-### 2.2 Restriccion de Unicidad Absoluta
+### 2.3 La Poblacion (Los 40 Planes Compitiendo)
 
-Ningun destino puede aparecer repetido dentro del mismo cromosoma:
+La poblacion es el conjunto de **40 itinerarios alternativos** generados al inicio de forma aleatoria:
+
+| Individuo | Itinerario Activo ($K = 3$) | Lomas en Reserva (Suplentes) | Diagnostico del Plan | Calidad Inicial Estimada |
+| :---: | :--- | :--- | :--- | :--- |
+| **Plan 1** | Paraiso $\to$ Manchay $\to$ Mangomarca | Lucumo, Amancaes, Ancon, ... | Lomas cercanas en Lima Sur/Este, gasto bajo (S/ 35). | **Alta (Candidato a Campeon)** |
+| **Plan 2** | Lucumo $\to$ Ancon $\to$ Lachay | Paraiso, Carabayllo, Primavera, ... | Muy dispersas (>120 km de viaje), pasajes muy caros. | **Baja (Se extinguira rapido)** |
+| **Plan 3** | Carabayllo $\to$ Primavera $\to$ Amancaes | Lucumo, Manchay, Paraiso, ... | Concentradas en Lima Norte, costo intermedio. | **Media (Mejorable con cruce)** |
+| **...** | *(37 planes adicionales generados)* | ... | ... | ... |
+
+### 2.4 Restriccion de Unicidad Absoluta y Atajo para K = 1
+
+- **Unicidad:** Al modelarse como una permutacion estricta de los 15 alelos, el cromosoma completo y su ventana activa tienen garantia matematica de cero alelos duplicados ($\forall i \neq j \implies g_i \neq g_j$).
+- **Atajo Determinista ($K = 1$):** Cuando el usuario dispone de 1 solo dia de excursion, el orquestador aplica una bifurcacion de control en $O(N)$ seleccionando directamente la loma de mayor score difuso dentro del presupuesto, respondiendo en menos de 0.05 segundos.
+
+---
+
+## 3. La Funcion Fitness (Aptitud) Explicada en Palabras
+
+Antes de la formulacion matematica formal, la funcion de aptitud representa la **calificacion global del viaje** segun la siguiente regla en palabras cotidianas:
 
 $$
-\forall i \neq j \implies g_i \neq g_j \quad \text{donde } g_i, g_j \in x
+\mathbf{Nota\ del\ Viaje\ (Fitness)} = (\text{Belleza\ y\ Calidad\ de\ las\ Lomas}) - (\text{Desgaste\ por\ Viajar\ Lejos}) - (\text{Multa\ por\ Exceso\ de\ Presupuesto}) - (\text{Multa\ por\ Falta\ de\ Tiempo})
 $$
 
-Esta propiedad se preserva nativamente tanto en la inicializacion como en todos los operadores de cruce y mutacion, evitando la necesidad de fases de reparacion heuristica complejas.
+### Tabla de Criterios: ¿Que suma puntos y que resta puntos?
 
-## 3. Formulacion Matematica de la Funcion de Aptitud (Fitness)
+| Criterio Evaluado | Efecto en la Nota | ¿Como se calcula en palabras? | Justificacion Practica |
+| :--- | :---: | :--- | :--- |
+| **Belleza y Calidad Ecoturistica** | **Suma (+)** | Suma de los scores difusos (0 a 10) de las lomas titulares. | El turista busca lomas verdes, seguras y con senderos accesibles. |
+| **Desgaste por Traslados** | **Resta (-)** | Kilometros acumulados de viaje entre loma y loma dividido entre 100. | Viajar horas en bus agota al turista y quita tiempo de disfrute. |
+| **Multa por Exceso de Presupuesto** | **Castiga (-)** | Si gastas menos o igual que tu presupuesto, multa = 0. Si te pasas, multa proporcional al exceso al cuadrado. | El viaje debe ser pagable; si sobrepasa el dinero del usuario, pierde viabilidad. |
+| **Multa por Falta de Tiempo** | **Castiga (-)** | Si las caminatas caben en las 8h utiles por dia, multa = 0. Si faltan horas, penaliza al cuadrado. | Las jornadas deben ser realizables sin sobreexigir fisicamente al usuario. |
 
-La funcion de aptitud $F(x)$ sintetiza multiples objetivos mediante una **escalarizacion lineal con penalizaciones cuadraticas duras**:
+### Ejemplo Numerico Paso a Paso
 
-$$
-F(x) = \sum_{j=1}^{K} S_{\text{difuso}}(d_j) \;-\; \beta \cdot \left( \frac{\text{DistanciaTotal}(x)}{100} \right) \;-\; \lambda_1 \cdot \Omega_{\text{presupuesto}} \;-\; \lambda_2 \cdot \Omega_{\text{tiempo}} \;-\; \Omega_{\text{unicidad}}
-$$
+Supongamos que un usuario dispone de **S/ 60.00 de presupuesto** y **3 dias**.
 
-### 3.1 Termino 1: Beneficio Ecoturistico Difuso
+Evaluamos el **Plan 1** (`L0: Paraiso` $\to$ `L3: Manchay` $\to$ `L4: Mangomarca`):
+
+| Paso | Concepto Evaluado | Datos Reales de las Lomas | Cuenta en Palabras | Puntos Aportados |
+| :---: | :--- | :--- | :--- | :---: |
+| **1** | **Calidad de las Lomas** | Paraiso (8.5 pts) + Manchay (7.5 pts) + Mangomarca (8.0 pts) | Sumar las notas difusas de cada loma | **+24.00 pts** |
+| **2** | **Traslados en bus** | Paraiso a Manchay (7.5 km) + Manchay a Mangomarca (16.0 km) | Total 23.5 km $\implies$ Restar $23.5 / 100$ | **-0.23 pts** |
+| **3** | **Gasto del Viaje** | Entradas y pasajes: S/ 15 + S/ 10 + S/ 10 = S/ 35 | Costo S/ 35 vs Limite S/ 60 $\implies$ No se paso | **-0.00 pts** (Sin multa) |
+| **4** | **Horas de Caminata** | Senderos: 4.5h + 3.5h + 4.0h = 12 horas totales | 12h caben en 3 dias (24h utiles) $\implies$ Tiempo OK | **-0.00 pts** (Sin multa) |
+| **FINAL** | **Calificacion Total** | **Fitness = 24.00 - 0.23 - 0.00 - 0.00** | Nota global del itinerario | **23.77 puntos** |
+
+---
+
+## 4. Formulacion Matematica Rigurosa del Fitness
+
 
 $$
 F_{\text{calidad}}(x) = \sum_{j=1}^{K} S_{\text{difuso}}(d_j)
@@ -84,7 +144,7 @@ $$
 - $S_{\text{difuso}}(d_j) \in [0.0, 10.0]$ es el score de recomendacion calculado por el sistema de inferencia difusa Mamdani de 4 variables (saturacion, seguridad, clima-verdor y accesibilidad).
 - Este termino recompensa la inclusion de destinos de alta calidad y pertinencia para el turista.
 
-### 3.2 Termino 2: Costo por Desplazamiento Geografico
+### 3.2 Termino 2: Costo por Desplazamiento Geografico Inter-Lomas
 
 $$
 f_{\text{distancia}}(x) = \beta \cdot \left( \frac{\text{DistanciaTotal}(x)}{100} \right)
@@ -101,7 +161,6 @@ $$
 Si la ruta contiene un unico destino ($K = 1$), $\text{DistanciaTotal}(x) = 0.0\text{ km}$.
 
 #### Formula de Haversine:
-
 Dados dos puntos $P_1(\phi_1, \lambda_1)$ y $P_2(\phi_2, \lambda_2)$ en coordenadas decimales (latitud y longitud):
 
 $$
@@ -120,24 +179,23 @@ $$
 d = R \cdot c \quad \text{con } R = 6371.0\text{ km (radio medio de la Tierra)}
 $$
 
-### 3.3 Termino 3: Penalizacion Cuadratica Presupuestal
+### 3.3 Termino 3: Penalizacion Relativa Adimensional Presupuestal
 
 $$
-\Omega_{\text{presupuesto}} = \lambda_1 \cdot \left(\max\left(0,\; \sum_{j=1}^{K} \text{CostoEstimado}(d_j) - \text{Presupuesto}\right)\right)^2
+\Omega_{\text{presupuesto}}^{\text{rel}} = \lambda_1 \cdot \left( \frac{\max\left(0,\; \sum_{j=1}^{K} \text{CostoEstimado}(d_j) - \text{Presupuesto}\right)}{\text{Presupuesto}} \right)^2
 $$
 
-- Con $\lambda_1 = 1.0$.
-- **Propiedad:** Si la ruta respeta el presupuesto ($\text{CostoTotal} \le \text{Presupuesto}$), la penalizacion es exactamente cero.
-- Si el presupuesto se sobrepasa, la funcion cuadratica castiga de forma exponencial las desviaciones: excesos leves (ej. S/ 2) generan una penalizacion insignificante ($2^2 = 4$), mientras que excesos mayores (ej. S/ 20) degradan severamente el fitness ($20^2 = 400$), forzando al algoritmo a descartar rutas inviables durante la seleccion.
+- Con $\lambda_1 = 25.0$.
+- **Resolucion del Fitness Scaling Problem:** Al dividir el exceso entre el presupuesto, la metrica se vuelve adimensional porcentual. Un exceso del 20% genera $(0.20)^2 \times 25.0 = 1.0$ punto de castigo, permitiendo que la seleccion por torneo distinga rutas con buenos atractivos sin que excesos monetarios marginales destruyan la poblacion.
 
-### 3.4 Termino 4: Penalizacion Cuadratica Temporal
+### 3.4 Termino 4: Penalizacion Relativa Adimensional Temporal
 
 $$
-\Omega_{\text{tiempo}} = \lambda_2 \cdot \left(\max\left(0,\; \sum_{j=1}^{K} \text{HorasEstimadas}(d_j) - (\text{DiasDisponibles} \times 8.0)\right)\right)^2
+\Omega_{\text{tiempo}}^{\text{rel}} = \lambda_2 \cdot \left( \frac{\max\left(0,\; \sum_{j=1}^{K} \text{HorasEstimadas}(d_j) - (\text{DiasDisponibles} \times 8.0)\right)}{\text{DiasDisponibles} \times 8.0} \right)^2
 $$
 
-- Con $\lambda_2 = 1.0$, asumiendo una jornada util de 8.0 horas diarias de trekking por dia disponible.
-- Penaliza aquellas combinaciones de lomas cuya duracion estimada de ascenso y recorrido exceda la ventana temporal del usuario.
+- Con $\lambda_2 = 25.0$, normalizado sobre la jornada util disponible ($8.0$ horas por dia).
+
 
 ### 3.5 Termino 5: Penalizacion Estricta de Unicidad
 
@@ -178,41 +236,34 @@ Para seleccionar cada progenitor:
 
 - **Justificacion:** El torneo con $k=3$ ofrece una presion selectiva intermedia ideal: favorece a los mejores individuos sin descartar prematuramente la diversidad genetica, evitando caer en optimos locales tempranos.
 
-### 4.2 Cruce: Order Crossover (OX) para Subconjuntos de Longitud $K$
+### 4.2 Cruce: Order Crossover (OX) Estandar sobre Permutacion Completa (N = 15)
 
-El operador OX clasico asume que ambos padres contienen exactamente los mismos genes. Al tratarse de subconjuntos de tamano $K$ elegidos de un universo $N=15$, los padres pueden contener genes distintos.
+Al utilizar una representacion de longitud completa $N = 15$, ambos progenitores contienen exactamente el mismo conjunto de alelos $\{L_0, \dots, L_{14}\}$. Por tanto, se implementa el operador **Order Crossover (OX) estandar de libros de texto** sin requerir heurísticas de relleno ad-hoc:
 
 **Procedimiento implementado:**
-
-1. Se seleccionan dos indices de corte aleatorios $0 \le i_1 < i_2 < K$.
+1. Se eligen dos puntos de corte aleatorios $0 \le i_1 < i_2 < 15$.
 2. El descendiente hereda el subsegmento continuo del Padre 1 entre $i_1$ e $i_2$:
-   $$
-   \text{Hijo}[i_1 : i_2 + 1] = \text{Padre1}[i_1 : i_2 + 1]
-   $$
+   $$\text{Hijo}[i_1 : i_2 + 1] = \text{Padre1}[i_1 : i_2 + 1]$$
 3. Para completar las posiciones restantes, se recorren los genes del Padre 2 comenzando en la posicion $i_2 + 1$ de forma circular.
-4. Solo se insertan aquellos genes que **no esten presentes** en el segmento heredado.
-5. Si tras recorrer el Padre 2 aun quedan posiciones libres (porque ambos padres compartian muchos alelos), los huecos restantes se completan con destinos del catalogo global $N$ no presentes en el hijo, seleccionados al azar.
+4. Solo se insertan aquellos alelos que **no esten presentes** en el segmento heredado.
+- **Resultado:** Garantia matematica de que el descendiente es una permutacion estricta y valida de los 15 alelos, y su ventana activa `Hijo[:K]` es una ruta valida sin duplicados.
 
-- **Resultado:** Garantia matematica de que el descendiente tiene exactamente longitud $K$ y cero duplicados.
-
-### 4.3 Mutaciones Adaptativas
+### 4.3 Mutaciones Adaptativas en el Cromosoma Global
 
 Cada vez que un individuo es seleccionado para mutar (con probabilidad $p_m = 0.30$), se aplica una de las siguientes tres estrategias:
 
-#### A. Mutacion Swap (Intercambio — Probabilidad relativa 40%)
+#### A. Swap Activo-Reserva (Sustitucion de Loma — Probabilidad relativa 40%)
+- **Mecanica:** Se elige una posicion activa $i < K$ y una posicion de reserva $j \ge K$ y se intercambian sus alelos: $\text{Hijo}[i], \text{Hijo}[j] = \text{Hijo}[j], \text{Hijo}[i]$.
+- **Objetivo:** Exploracion de catalogo. Introduce una loma no visitada en la ventana activa, permitiendo descubrir destinos con mejores scores difusos o costos mas economicos que reduzcan la penalizacion presupuestal.
 
-- **Mecanica:** Se seleccionan dos indices aleatorios $i \neq j$ y se intercambian sus alelos: $\text{Hijo}[i], \text{Hijo}[j] = \text{Hijo}[j], \text{Hijo}[i]$.
-- **Objetivo:** Explorar permutaciones del mismo conjunto de lomas para acortar traslados.
+#### B. Swap Activo-Activo (Reordenamiento de Secuencia — Probabilidad relativa 40%)
+- **Mecanica:** Se eligen dos posiciones dentro de la ventana activa $i_1, i_2 < K$ y se intercambian sus posiciones en la ruta.
+- **Objetivo:** Explotacion de distancia. Busca permutaciones de las mismas lomas que reduzcan la distancia total de traslado Haversine.
 
-#### B. Mutacion por Reemplazo (Sustitucion — Probabilidad relativa 40%)
+#### C. Inversion 2-Opt Activa (Eliminacion de Cruces — Probabilidad relativa 20%)
+- **Mecanica:** Se eligen dos indices dentro de la ventana activa $i_1 < i_2 < K$ y se invierte el subsegmento: $\text{Hijo}[i_1:i_2+1] = \text{reversed}(\text{Hijo}[i_1:i_2+1])$.
+- **Objetivo:** Optimizador local para desenredar cruces geograficos entre paradas consecutivas.
 
-- **Mecanica:** Se selecciona una posicion al azar $i$ del cromosoma y se reemplaza su destino por una loma del catalogo $N$ que **no pertenezca** a la ruta actual.
-- **Objetivo:** Explorar nuevas combinaciones de destinos, permitiendo ingresar lomas con mejor score difuso o costos mas bajos que reduzcan la penalizacion de presupuesto.
-
-#### C. Mutacion por Inversion (2-Opt Local — Probabilidad relativa 20%)
-
-- **Mecanica:** Se seleccionan dos indices $i_1 < i_2$ y se invierte el subsegmento de paradas intermedias: $\text{Hijo}[i_1:i_2+1] = \text{reversed}(\text{Hijo}[i_1:i_2+1])$.
-- **Objetivo:** Operador clasico de optimizacion de rutas que desenreda cruces geograficos.
 
 ### 4.4 Elitismo ($E = 2$)
 
