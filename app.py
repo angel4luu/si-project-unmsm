@@ -33,10 +33,23 @@ def cargar_destinos():
         return json.load(f)
 
 
-def crear_mapa_lomas(destinos, ruta_ids=None):
-    """Genera el mapa interactivo en Folium con los marcadores de lomas."""
+def crear_mapa_lomas(destinos, ruta_ids=None, nodo_base=None):
+    """Genera el mapa interactivo en Folium con los marcadores de lomas y el nodo base arrastrable."""
     centro_lima = [-12.0464, -77.0428]
-    mapa = folium.Map(location=centro_lima, zoom_start=10, tiles="OpenStreetMap")
+    lat_mapa = nodo_base["lat"] if nodo_base else centro_lima[0]
+    lon_mapa = nodo_base["lon"] if nodo_base else centro_lima[1]
+    
+    mapa = folium.Map(location=[lat_mapa, lon_mapa], zoom_start=10, tiles="OpenStreetMap")
+
+    # Marcador de Alojamiento / Nodo Base (d0) Arrastrable (draggable=True)
+    if nodo_base:
+        folium.Marker(
+            location=[nodo_base["lat"], nodo_base["lon"]],
+            popup=folium.Popup("<div style='font-family: sans-serif;'><b>📍 Tu Alojamiento (Nodo Base)</b><br/>¡Arrastra este pin o haz clic en el mapa para mover tu hospedaje!</div>", max_width=220),
+            tooltip="📍 Tu Alojamiento (Arrastra para mover)",
+            icon=folium.Icon(color="red", icon="home", prefix="fa"),
+            draggable=True
+        ).add_to(mapa)
 
     orden_map = {}
     if ruta_ids:
@@ -85,10 +98,13 @@ def main():
     destinos_dict = {d['id']: d for d in destinos}
 
     # Inicializar estado de sesión para persistencia entre renders
+    # Inicializar estado de sesión para persistencia entre renders
     if 'resultado_optimizacion' not in st.session_state:
         st.session_state.resultado_optimizacion = None
     if 'perfil_usuario' not in st.session_state:
         st.session_state.perfil_usuario = None
+    if 'nodo_base' not in st.session_state:
+        st.session_state.nodo_base = {"lat": -12.0464, "lon": -77.0428}  # Centro de Lima por defecto
 
     # Título Principal
     st.title("Sistema Inteligente de Rutas de Trekking en las Lomas de Lima")
@@ -114,6 +130,9 @@ def main():
             condicion_input = st.selectbox("Condición física:", ["Fácil", "Moderado", "Difícil"], index=1)
             intereses_input = st.multiselect("Intereses:", ["Naturaleza", "Arqueología", "Vistas Panorámicas", "Aventura"], default=["Naturaleza"])
 
+        st.markdown("---")
+        st.caption("💡 **Tip de Alojamiento:** Puedes hacer **clic sobre el mapa** para marcar exactamente la ubicación de tu hospedaje/nodo base.")
+
         btn_optimizar = st.button("Generar Ruta Óptima", type="primary", use_container_width=True)
 
         if btn_optimizar:
@@ -130,19 +149,23 @@ def main():
                         "clima_preferido": "Garúa"
                     }
 
+                nodo_base_actual = st.session_state.nodo_base
+                perfil["nodo_base"] = nodo_base_actual
+
                 # 2. Mapeo K
                 k = dias_a_k(perfil.get("dias_disponibles", 3))
 
                 # 3. Lógica Difusa
                 scores_difusos = calcular_scores_todos_destinos(destinos)
 
-                # 4. Algoritmo Genético
+                # 4. Algoritmo Genético (con costo de desplazamiento radial desde nodo_base marcado en mapa)
                 resultado_ag = optimizar_ruta_lomas(
                     destinos=destinos,
                     scores_difusos=scores_difusos,
                     k=k,
                     presupuesto=perfil.get("presupuesto_max", 60.0),
-                    dias_disponibles=perfil.get("dias_disponibles", 3)
+                    dias_disponibles=perfil.get("dias_disponibles", 3),
+                    nodo_base=nodo_base_actual
                 )
 
                 # 5. Itinerario narrativo
@@ -165,11 +188,32 @@ def main():
 
     with col_mapa:
         st.subheader("Mapa Interactivo de las Lomas")
+        st.caption("📍 **Alojamiento (Pin Rojo 🏠):** Puedes **arrastrar el marcador** o hacer **clic en cualquier punto del mapa** para mover tu hospedaje.")
         ruta_ids = resultado['ag']['ruta_ids'] if resultado else None
 
         if MAPAS_DISPONIBLES:
-            mapa = crear_mapa_lomas(destinos, ruta_ids)
-            st_folium(mapa, width="100%", height=560, returned_objects=[])
+            mapa = crear_mapa_lomas(destinos, ruta_ids, st.session_state.nodo_base)
+            mapa_output = st_folium(mapa, width="100%", height=560, returned_objects=["last_clicked", "last_object_clicked"])
+
+            nueva_pos = None
+
+            # 1. Evento de arrastrar marcador (last_object_clicked / marker drag)
+            if mapa_output and mapa_output.get("last_object_clicked"):
+                obj = mapa_output["last_object_clicked"]
+                if isinstance(obj, dict) and "lat" in obj and "lng" in obj:
+                    nueva_pos = {"lat": round(obj["lat"], 4), "lon": round(obj["lng"], 4)}
+
+            # 2. Evento de clic en mapa
+            elif mapa_output and mapa_output.get("last_clicked"):
+                clic = mapa_output["last_clicked"]
+                if isinstance(clic, dict) and "lat" in clic and "lng" in clic:
+                    nueva_pos = {"lat": round(clic["lat"], 4), "lon": round(clic["lng"], 4)}
+
+            # Si se detectó una posición nueva distinta a la guardada, actualizar
+            if nueva_pos and (nueva_pos["lat"] != st.session_state.nodo_base["lat"] or nueva_pos["lon"] != st.session_state.nodo_base["lon"]):
+                st.session_state.nodo_base = nueva_pos
+                st.toast(f"📍 Alojamiento movido a ({nueva_pos['lat']}, {nueva_pos['lon']})", icon="📍")
+                st.rerun()
         else:
             st.info("Para visualizar el mapa interactivo en Folium, instala `pip install folium streamlit-folium`.")
             st.write("Lista de Destinos Catalogados:")
@@ -190,7 +234,10 @@ def main():
             badges = [f"**{i+1}.** {destinos_dict[did]['nombre']}" for i, did in enumerate(ag['ruta_ids'])]
             st.markdown(" -> ".join(badges))
 
-            tabs = st.tabs(["Itinerario", "Cómo Llegar", "Scores Difusos"])
+            nb = st.session_state.nodo_base
+            st.info(f"📍 **Alojamiento (Nodo Base) en mapa:** Lat {nb['lat']}, Lon {nb['lon']}")
+
+            tabs = st.tabs(["Itinerario", "Cómo Llegar", "Traslados Radiales", "Scores Difusos"])
 
             with tabs[0]:
                 st.markdown(resultado['itinerario'])
@@ -206,6 +253,17 @@ def main():
                             st.write(f"• {paso}")
 
             with tabs[2]:
+                st.write("### Desglose de Desplazamientos Radiales (Ida / Vuelta Diaria)")
+                if ag.get("tramos"):
+                    tramos_df = [
+                        {"Origen": t["de"], "Destino": t["hacia"], "Distancia (km)": f"{t['distancia_km']} km"}
+                        for t in ag["tramos"]
+                    ]
+                    st.dataframe(tramos_df, use_container_width=True)
+                else:
+                    st.write("Excursión de 1 solo destino desde el nodo base.")
+
+            with tabs[3]:
                 st.write("### Puntuación de Recomendación Difusa [0-10]")
                 scores_df = [
                     {"ID": did, "Loma": destinos_dict[did]["nombre"], "Score Difuso": resultado['scores_difusos'][did]}

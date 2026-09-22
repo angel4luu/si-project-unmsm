@@ -178,18 +178,14 @@ flowchart TD
 
 ### 3.6 Flujo de Interacción del Usuario
 
-La interfaz se divide en **dos paneles**: una barra lateral (sidebar) con los controles de entrada y resultados, y un área principal con el mapa interactivo generado por folium.
+La interfaz se divide en **dos paneles**: una barra lateral (sidebar) para los controles de entrada del perfil del turista, y un área principal donde se muestran el mapa interactivo generado con `folium` y los resultados detallados (itinerario LLM y guía de acceso).
 
 ```mermaid
 flowchart TD
-    P1["Pantalla 1: Mapa General<br/>Los 15 marcadores de lomas"] --> P2["Pantalla 2: Sidebar<br/>Usuario ingresa datos<br/>días_disponibles, presupuesto, intereses"]
-    P2 --> P3["Pantalla 3: Procesamiento<br/>LLM -> Mapeo -> Fuzzy -> AG"]
-    P3 --> P4["Pantalla 4: Sidebar muestra resultado<br/>Ruta óptima + Score total<br/>Itinerario LLM + Accesos"]
-    P4 --> P5["Pantalla 5: Mapa con Focus<br/>Solo los K marcadores<br/>de la ruta óptima<br/>Badge numerado 1,2,3..."]
-    P5 --> P6["Pantalla 6: Click en marcador<br/>Panel lateral con detalles<br/>del lugar turístico"]
-    P6 --> P7["Cerrar detalle<br/>Vuelve a marcadores<br/>enfocados"]
-    P7 --> P8["Opción 'Vista general'<br/>Vuelve a los 15 marcadores"]
-    P8 --> P2
+    P1["Pantalla 1: Mapa General<br/>15 marcadores inactivos en gris"] --> P2["Pantalla 2: Sidebar<br/>Usuario ingresa datos<br/>días_disponibles, presupuesto, intereses"]
+    P2 --> P3["Pantalla 3: Procesamiento<br/>LLM → Mapeo → Fuzzy → AG"]
+    P3 --> P4["Pantalla 4: Área Principal & Sidebar<br/>Resaltado de K lomas en verde con banderas<br/>+ Itinerario LLM + Guía de accesos"]
+    P4 --> P5["Pantalla 5: Click en marcador<br/>Popup Flotante en Mapa<br/>con orden #K, costo, dificultad y transporte"]
 ```
 
 **Descripción de cada pantalla:**
@@ -197,22 +193,18 @@ flowchart TD
 
 | Pantalla | Contenido                                                                                                | Ubicación               |
 | -------- | -------------------------------------------------------------------------------------------------------- | ----------------------- |
-| 1        | Mapa con los 15 marcadores de todas las lomas                                                            | Área principal          |
-| 2        | Sidebar con formulario: días\_disponibles, presupuesto, intereses, condición física                      | Barra lateral           |
-| 3        | Indicador de procesamiento: LLM → Mapeo → Fuzzy → AG                                                     | Barra lateral           |
-| 4        | Sidebar muestra: ruta óptima (K destinos en orden), score total, itinerario LLM, instrucciones de acceso | Barra lateral           |
-| 5        | Mapa con focus en K marcadores de la ruta, cada uno con badge numérico de orden                          | Área principal          |
-| 6        | Click en marcador → panel con detalles del lugar (tipo, score, dificultad, costo, accesibilidad)         | Panel lateral emergente |
-| 7        | Vista de detalle cerrada → vuelve a marcadores enfocados                                                 | Área principal          |
-| 8        | Botón "Vista general" → vuelve a los 15 marcadores                                                       | Barra lateral           |
-| 9        | Botón "Nueva ruta" → permite ingresar nuevos datos                                                       | Barra lateral           |
+| 1        | Mapa interactivo inicial con los 15 marcadores de lomas (color gris inactivo)                            | Área principal          |
+| 2        | Sidebar con controles: Selección de modo (Texto Libre / Formulario), días, presupuesto y preferencias   | Barra lateral           |
+| 3        | Indicador de estado/progreso del pipeline: LLM → Mapeo → Fuzzy → AG/Shortcut                             | Barra lateral / Principal |
+| 4        | Mapa con K lomas resaltadas en verde con banderas de orden + Panel con itinerario LLM y accesos          | Área principal          |
+| 5        | Click en marcador → Popup Flotante de Folium con detalles del lugar (#Orden, Distrito, Costo, Transporte) | Mapa (Popup flotante)   |
 
 
 **Interacciones confirmadas:**
 
-- El usuario puede presionar un marcador para ver información del lugar (similar a una vista de detalles de mapa)
-- El usuario puede cerrar la vista de detalle y volver a los marcadores enfocados
-- El usuario puede cerrar o mantener la ventana de proceso de optimización
+- El usuario puede presionar cualquier marcador en el mapa para desplegar su Popup Flotante con información detallada.
+- Los $K$ destinos seleccionados en la ruta óptima se destacan visualmente con color verde y banderas (`fa-flag`), mientras que los destinos restantes permanecen en el mapa en tono gris.
+- El usuario puede reajustar los parámetros en el sidebar y volver a ejecutar la optimización en cualquier momento.
 - El usuario puede volver a ingresar datos y generar una nueva ruta óptima mediante el algoritmo
 - **No se incluye chat** — toda la información se muestra estructurada en la sidebar
 
@@ -552,41 +544,35 @@ flowchart TB
 
 ### 7.1 Descripción General
 
-La interfaz se implementa con **Streamlit** (Python web framework) y se compone de dos paneles: una **barra lateral** con controles de entrada y resultados, y un **área principal** con el mapa interactivo generado por **folium**.
+La interfaz se implementa con **Streamlit** (Python web framework) y se organiza en un **layout responsivo**: una barra lateral (*sidebar*) para la captura del perfil del usuario y un área principal dividida en columnas para el mapa interactivo (`folium`) y la presentación de resultados.
 
-Streamlit permite generar una aplicación web sin necesidad de frontend separado (React, HTML, CSS). El mapa se renderiza con folium embebido en Streamlit mediante la librería `st_folium`.
+Streamlit permite generar una aplicación web sin necesidad de frontend separado (React, HTML, CSS). El mapa se renderiza con folium embebido en Streamlit mediante la librería `streamlit_folium`.
 
 ### 7.2 Componentes de la GUI
 
 
 | Componente                     | Descripción                                                           | Ubicación        |
 | ------------------------------ | --------------------------------------------------------------------- | ---------------- |
-| **Formulario de perfil**       | Captura `días_disponibles`, presupuesto, intereses, condición física  | Barra lateral    |
-| **Área de texto libre**        | Input opcional para que el usuario escriba sus preferencias           | Barra lateral    |
-| **Indicador de procesamiento** | Muestra progreso: LLM → Mapeo → Fuzzy → AG                            | Barra lateral    |
-| **Tabla de scores difusos**    | Muestra cada destino con su Score de Recomendación                    | Barra lateral    |
-| **Ruta óptima**                | Lista ordenada de K destinos seleccionados por el AG                  | Barra lateral    |
-| **Itinerario LLM**             | Texto generado por el LLM con detalles día a día                      | Barra lateral    |
-| **Instrucciones de acceso**    | Cómo llegar a cada destino con transporte público (texto)             | Barra lateral    |
-| **Mapa interactivo (folium)**  | Muestra los marcadores de las lomas con focus en la ruta óptima       | Área principal   |
-| **Badge de orden**             | Número sobre cada marcador indicando su posición en la ruta           | Mapa             |
-| **Panel de detalles**          | Al hacer click en un marcador, muestra información completa del lugar | Mapa (emergente) |
-| **Botón "Vista general"**      | Restablece el mapa a los 15 marcadores                                | Barra lateral    |
-| **Botón "Nueva ruta"**         | Permite al usuario ingresar nuevos datos y generar otra ruta          | Barra lateral    |
+| **Selector de modo de entrada**| Permite alternar entre "Texto Libre (IA Generativa)" y "Formulario Guiado" | Barra lateral   |
+| **Formulario de perfil**       | Captura `días_disponibles`, presupuesto, intereses y condición física | Barra lateral    |
+| **Área de texto libre**        | Input opcional (`st.text_area`) para redactar preferencias en lenguaje natural | Barra lateral |
+| **Botón de optimización**      | Dispara el pipeline completo (LLM → Mapeo → Fuzzy → AG/Shortcut)      | Barra lateral    |
+| **Mapa interactivo (folium)**  | Muestra las 15 lomas; resalta los $K$ destinos activos en verde con bandera | Área principal |
+| **Popup flotante de marcador** | Muestra #Orden, Nombre, Distrito, Dificultad, Costo y Transporte      | Mapa (Popup)     |
+| **Resultados de optimización** | Muestra el resumen de la ruta seleccionada y el score total          | Área principal   |
+| **Itinerario narrativo LLM**   | Presenta la planificación día a día redactada en lenguaje amigable   | Área principal   |
+| **Guía de accesos**            | Instrucciones detalladas de transporte público para cada loma activa  | Área principal   |
 
 
 ### 7.3 Flujo de la Interacción
 
 ```mermaid
 flowchart TD
-    P1["Mapa con 15 marcadores<br/>Vista general de todas las lomas"] --> P2["Sidebar: Usuario ingresa datos"]
+    P1["Mapa interactivo inicial<br/>15 marcadores inactivos en gris"] --> P2["Sidebar: Usuario configura perfil"]
     P2 --> P3["Procesamiento: LLM → Mapeo → Fuzzy → AG"]
-    P3 --> P4["Sidebar: Muestra ruta óptima<br/>+ Itinerario LLM + Accesos"]
-    P4 --> P5["Mapa con Focus<br/>K marcadores con badge numérico"]
-    P5 --> P6["Click en marcador<br/>→ Detalles del lugar"]
-    P6 --> P7["Cerrar detalle<br/>→ Vuelve a marcadores enfocados"]
-    P7 --> P8["'Vista general'<br/>→ Vuelve a 15 marcadores"]
-    P8 --> P2
+    P3 --> P4["Mapa actualizado: K marcadores verdes con banderas"]
+    P4 --> P5["Área principal: Muestra itinerario LLM y guía de accesos"]
+    P4 --> P6["Click en marcador → Popup flotante con detalles"]
 ```
 
 ### 7.4 Justificación del Stack UI

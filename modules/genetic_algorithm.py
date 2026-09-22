@@ -68,7 +68,8 @@ class LomasGeneticOptimizer:
         beta_distancia: float = 1.0,
         lambda_presupuesto: float = 25.0,
         lambda_tiempo: float = 25.0,
-        semilla: Optional[int] = None
+        semilla: Optional[int] = None,
+        nodo_base: Optional[Dict[str, float]] = None
     ):
         if semilla is not None:
             random.seed(semilla)
@@ -78,6 +79,9 @@ class LomasGeneticOptimizer:
         self.todos_ids = [d["id"] for d in destinos]
         self.n_total = len(self.todos_ids)
         self.scores_difusos = scores_difusos
+
+        # Coordenadas del nodo base del usuario (por defecto: Centro de Lima -12.0464, -77.0428)
+        self.nodo_base = nodo_base or {"lat": -12.0464, "lon": -77.0428}
 
         # Restringir K al rango valido [1, n_total]
         self.k = max(1, min(int(k), self.n_total))
@@ -111,23 +115,25 @@ class LomasGeneticOptimizer:
 
     def calcular_distancia_ruta(self, ruta: List[str]) -> float:
         """
-        Calcula la distancia total acumulada en kilometros entre paradas consecutivas.
-        Si la ruta tiene 1 destino, la distancia de traslado inter-loma es 0.0 km.
+        Calcula la distancia acumulada de desplazamiento radial desde el nodo base (d0)
+        hacia cada una de las K lomas del itinerario.
+        Modelado logistico real: El turista realiza excursiones diurnas e independientes
+        retornando cada dia a su alojamiento base.
         """
-        if len(ruta) <= 1:
+        if not ruta:
             return 0.0
 
+        lat0, lon0 = self.nodo_base["lat"], self.nodo_base["lon"]
         distancia_total = 0.0
-        for i in range(len(ruta) - 1):
-            c1 = self.destinos_dict[ruta[i]]["coordenadas"]
-            c2 = self.destinos_dict[ruta[i + 1]]["coordenadas"]
-            distancia_total += distancia_haversine(c1["lat"], c1["lon"], c2["lat"], c2["lon"])
+        for did in ruta:
+            coords = self.destinos_dict[did]["coordenadas"]
+            distancia_total += distancia_haversine(lat0, lon0, coords["lat"], coords["lon"])
         return distancia_total
 
     def fitness(self, individuo_o_ruta: List[str]) -> float:
         """
         Funcion de aptitud multiobjetivo con penalizaciones relativas adimensionales.
-        F(x) = Beneficio_Difuso - beta*(Distancia/100) - lambda1*(DeltaPres/Pres)^2 - lambda2*(DeltaTiempo/Tiempo)^2 - Omega_unicidad
+        F(x) = Beneficio_Difuso - beta*(DistanciaRadial/100) - lambda1*(DeltaPres/Pres)^2 - lambda2*(DeltaTiempo/Tiempo)^2 - Omega_unicidad
         """
         # Extraer ventana activa (fenotipo)
         ruta = self.obtener_ruta_activa(individuo_o_ruta)
@@ -135,7 +141,7 @@ class LomasGeneticOptimizer:
         # 1. Beneficio acumulado por scores difusos
         beneficio_difuso = sum(self.scores_difusos.get(did, 5.0) for did in ruta)
 
-        # 2. Descuento por distancia geografica de traslado entre paradas
+        # 2. Descuento por distancia geografica de desplazamiento radial desde el nodo base
         distancia_km = self.calcular_distancia_ruta(ruta)
         costo_desplazamiento = self.beta_distancia * (distancia_km / 100.0)
 
@@ -397,20 +403,18 @@ class LomasGeneticOptimizer:
         distancia_final = self.calcular_distancia_ruta(ruta_final)
         grafica_ascii = self._dibujar_grafica_ascii(historial)
 
-        # Desglose tramo a tramo
+        # Desglose de traslados radiales desde el nodo base (d0)
         tramos = []
-        if len(ruta_final) > 1:
-            for i in range(len(ruta_final) - 1):
-                d_origen = self.destinos_dict[ruta_final[i]]
-                d_destino = self.destinos_dict[ruta_final[i + 1]]
-                c1 = d_origen["coordenadas"]
-                c2 = d_destino["coordenadas"]
-                d_km = distancia_haversine(c1["lat"], c1["lon"], c2["lat"], c2["lon"])
-                tramos.append({
-                    "de": d_origen["nombre"],
-                    "hacia": d_destino["nombre"],
-                    "distancia_km": round(d_km, 2)
-                })
+        lat0, lon0 = self.nodo_base["lat"], self.nodo_base["lon"]
+        for did in ruta_final:
+            d_destino = self.destinos_dict[did]
+            c2 = d_destino["coordenadas"]
+            d_km = distancia_haversine(lat0, lon0, c2["lat"], c2["lon"])
+            tramos.append({
+                "de": "Alojamiento (Nodo Base)",
+                "hacia": d_destino["nombre"],
+                "distancia_km": round(d_km, 2)
+            })
 
         return {
             "ruta_ids": ruta_final,
@@ -436,7 +440,8 @@ def optimizar_ruta_lomas(
     generaciones: int = 50,
     tam_poblacion: int = 40,
     semilla: Optional[int] = None,
-    verbose: bool = False
+    verbose: bool = False,
+    nodo_base: Optional[Dict[str, float]] = None
 ) -> Dict[str, Any]:
     """
     Punto de entrada estandar para ejecutar la optimizacion por Algoritmo Genetico.
@@ -450,7 +455,8 @@ def optimizar_ruta_lomas(
         dias_disponibles=dias_disponibles,
         generaciones=generaciones,
         tam_poblacion=tam_poblacion,
-        semilla=semilla
+        semilla=semilla,
+        nodo_base=nodo_base
     )
     return opt.optimizar(verbose=verbose)
 
