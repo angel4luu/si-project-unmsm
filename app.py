@@ -179,103 +179,116 @@ def main():
                 st.session_state.perfil_usuario = perfil
                 st.success("¡Ruta óptima calculada exitosamente!")
 
-    # ÁREA PRINCIPAL: Mapa y Resultados
-    col_mapa, col_detalle = st.columns([3, 2])
+    # ÁREA PRINCIPAL: Layout Jerárquico Reorganizado
+    st.subheader("🗺️ Mapa Interactivo de las Lomas de Lima")
+    st.caption("📍 **Alojamiento (Pin Rojo 🏠):** Puedes **arrastrar el marcador** o hacer **clic en cualquier punto del mapa** para mover tu hospedaje/nodo base.")
 
     resultado = st.session_state.resultado_optimizacion
+    ruta_ids = resultado['ag']['ruta_ids'] if resultado else None
 
-    with col_mapa:
-        st.subheader("Mapa Interactivo de las Lomas")
-        st.caption("📍 **Alojamiento (Pin Rojo 🏠):** Puedes **arrastrar el marcador** o hacer **clic en cualquier punto del mapa** para mover tu hospedaje.")
-        ruta_ids = resultado['ag']['ruta_ids'] if resultado else None
+    if MAPAS_DISPONIBLES:
+        mapa = crear_mapa_lomas(destinos, ruta_ids, st.session_state.nodo_base)
+        mapa_output = st_folium(mapa, width="100%", height=480, returned_objects=["last_clicked", "last_object_clicked"])
 
-        if MAPAS_DISPONIBLES:
-            mapa = crear_mapa_lomas(destinos, ruta_ids, st.session_state.nodo_base)
-            mapa_output = st_folium(mapa, width="100%", height=560, returned_objects=["last_clicked", "last_object_clicked"])
+        nueva_pos = None
 
-            nueva_pos = None
+        # 1. Evento de arrastrar marcador (last_object_clicked / marker drag)
+        if mapa_output and mapa_output.get("last_object_clicked"):
+            obj = mapa_output["last_object_clicked"]
+            if isinstance(obj, dict) and "lat" in obj and "lng" in obj:
+                nueva_pos = {"lat": round(obj["lat"], 4), "lon": round(obj["lng"], 4)}
 
-            # 1. Evento de arrastrar marcador (last_object_clicked / marker drag)
-            if mapa_output and mapa_output.get("last_object_clicked"):
-                obj = mapa_output["last_object_clicked"]
-                if isinstance(obj, dict) and "lat" in obj and "lng" in obj:
-                    nueva_pos = {"lat": round(obj["lat"], 4), "lon": round(obj["lng"], 4)}
+        # 2. Evento de clic en mapa
+        elif mapa_output and mapa_output.get("last_clicked"):
+            clic = mapa_output["last_clicked"]
+            if isinstance(clic, dict) and "lat" in clic and "lng" in clic:
+                nueva_pos = {"lat": round(clic["lat"], 4), "lon": round(clic["lng"], 4)}
 
-            # 2. Evento de clic en mapa
-            elif mapa_output and mapa_output.get("last_clicked"):
-                clic = mapa_output["last_clicked"]
-                if isinstance(clic, dict) and "lat" in clic and "lng" in clic:
-                    nueva_pos = {"lat": round(clic["lat"], 4), "lon": round(clic["lng"], 4)}
+        # Si se detectó una posición nueva distinta a la guardada, actualizar
+        if nueva_pos and (nueva_pos["lat"] != st.session_state.nodo_base["lat"] or nueva_pos["lon"] != st.session_state.nodo_base["lon"]):
+            st.session_state.nodo_base = nueva_pos
+            st.toast(f"📍 Alojamiento movido a ({nueva_pos['lat']}, {nueva_pos['lon']})", icon="📍")
+            st.rerun()
+    else:
+        st.info("Para visualizar el mapa interactivo en Folium, instala `pip install folium streamlit-folium`.")
 
-            # Si se detectó una posición nueva distinta a la guardada, actualizar
-            if nueva_pos and (nueva_pos["lat"] != st.session_state.nodo_base["lat"] or nueva_pos["lon"] != st.session_state.nodo_base["lon"]):
-                st.session_state.nodo_base = nueva_pos
-                st.toast(f"📍 Alojamiento movido a ({nueva_pos['lat']}, {nueva_pos['lon']})", icon="📍")
-                st.rerun()
-        else:
-            st.info("Para visualizar el mapa interactivo en Folium, instala `pip install folium streamlit-folium`.")
-            st.write("Lista de Destinos Catalogados:")
-            for d in destinos:
-                st.write(f"• **{d['id']}**: {d['nombre']} ({d['distrito']}) - Lat: {d['coordenadas']['lat']}, Lon: {d['coordenadas']['lon']}")
+    st.markdown("---")
 
-    with col_detalle:
-        if resultado:
-            ag = resultado['ag']
-            st.subheader("Resumen de la Ruta Óptima")
+    # SECCIÓN DE RESULTADOS DETALLADOS
+    if resultado:
+        ag = resultado['ag']
+        st.subheader("📊 Resumen de la Ruta Óptima")
 
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Destinos", f"{resultado['k']}")
-            m2.metric("Costo Total", f"S/ {ag['costo_total']:.2f}")
-            m3.metric("Distancia", f"{ag['distancia_total_km']:.1f} km")
+        # 1. Tarjetas de Métricas Principales (4 Columnas)
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("🟢 Destinos (K)", f"{resultado['k']}")
+        m2.metric("💰 Costo Total", f"S/ {ag['costo_total']:.2f}")
+        m3.metric("📍 Distancia Radial", f"{ag['distancia_total_km']:.1f} km")
+        score_promedio = sum(resultado['scores_difusos'].get(did, 5.0) for did in ag['ruta_ids']) / max(1, len(ag['ruta_ids']))
+        m4.metric("⭐ Score Difuso Prom.", f"{score_promedio:.2f} / 10")
 
-            st.write("**Secuencia de Visita:**")
-            badges = [f"**{i+1}.** {destinos_dict[did]['nombre']}" for i, did in enumerate(ag['ruta_ids'])]
-            st.markdown(" -> ".join(badges))
+        # 2. Secuencia de Visita con Badges Visuales
+        st.write("**Secuencia Recomendada de Excursiones:**")
+        cols_badges = st.columns(min(6, len(ag['ruta_ids'])))
+        for idx, did in enumerate(ag['ruta_ids']):
+            with cols_badges[idx % len(cols_badges)]:
+                st.success(f"**Día {idx+1}**\n\n{destinos_dict[did]['nombre']}")
 
-            nb = st.session_state.nodo_base
-            st.info(f"📍 **Alojamiento (Nodo Base) en mapa:** Lat {nb['lat']}, Lon {nb['lon']}")
+        nb = st.session_state.nodo_base
+        st.caption(f"📍 **Alojamiento (Nodo Base $d_0$):** Latitud {nb['lat']}, Longitud {nb['lon']}")
 
-            tabs = st.tabs(["Itinerario", "Cómo Llegar", "Traslados Radiales", "Scores Difusos"])
+        st.markdown("<br/>", unsafe_allow_html=True)
 
-            with tabs[0]:
-                st.markdown(resultado['itinerario'])
+        # 3. Pestañas de Detalles e Investigación Académica
+        tabs = st.tabs(["📜 Itinerario Narrativo", "🚌 Guía de Accesos", "🚗 Desplazamiento Radial", "⭐ Scores Difusos", "🧬 Métricas del AG"])
 
-            with tabs[1]:
-                st.write("### Instrucciones de Transporte Público")
-                for did in ag['ruta_ids']:
-                    guia = obtener_guia_acceso(did)
-                    with st.expander(f" {guia['nombre']} (~{guia['tiempo_total_min']} min, S/{guia['costo_total_soles']})"):
-                        st.write(f"**Punto de inicio:** {guia['punto_partida_recomendado']}")
-                        st.write(f"**Transporte:** {guia['medio_transporte']}")
-                        for paso in guia['pasos']:
-                            st.write(f"• {paso}")
+        with tabs[0]:
+            st.markdown(resultado['itinerario'])
 
-            with tabs[2]:
-                st.write("### Desglose de Desplazamientos Radiales (Ida / Vuelta Diaria)")
-                if ag.get("tramos"):
-                    tramos_df = [
-                        {"Origen": t["de"], "Destino": t["hacia"], "Distancia (km)": f"{t['distancia_km']} km"}
-                        for t in ag["tramos"]
-                    ]
-                    st.dataframe(tramos_df, use_container_width=True)
-                else:
-                    st.write("Excursión de 1 solo destino desde el nodo base.")
+        with tabs[1]:
+            st.write("### Instrucciones de Transporte Público")
+            for did in ag['ruta_ids']:
+                guia = obtener_guia_acceso(did)
+                with st.expander(f"🚌 {guia['nombre']} (~{guia['tiempo_total_min']} min, S/{guia['costo_total_soles']})"):
+                    st.write(f"**Punto de inicio:** {guia['punto_partida_recomendado']}")
+                    st.write(f"**Transporte:** {guia['medio_transporte']}")
+                    for paso in guia['pasos']:
+                        st.write(f"• {paso}")
 
-            with tabs[3]:
-                st.write("### Puntuación de Recomendación Difusa [0-10]")
-                scores_df = [
-                    {"ID": did, "Loma": destinos_dict[did]["nombre"], "Score Difuso": resultado['scores_difusos'][did]}
-                    for did in ag['ruta_ids']
+        with tabs[2]:
+            st.write("### Desglose de Desplazamientos Radiales (Ida / Vuelta Diaria)")
+            if ag.get("tramos"):
+                tramos_df = [
+                    {"Origen": t["de"], "Destino": t["hacia"], "Distancia (km)": f"{t['distancia_km']} km"}
+                    for t in ag["tramos"]
                 ]
-                st.dataframe(scores_df, use_container_width=True)
-        else:
-            st.info("Configura tus preferencias en la barra lateral y presiona **Generar Ruta Óptima** para visualizar la recomendación.")
-            st.write("###  Catálogo de las 15 Lomas de Lima:")
-            destinos_tabla = [
-                {"ID": d['id'], "Nombre": d['nombre'], "Distrito": d['distrito'], "Dificultad": d['dificultad'], "Costo": f"S/{d['costo_estimado']}"}
-                for d in destinos
+                st.dataframe(tramos_df, use_container_width=True)
+            else:
+                st.write("Excursión de 1 solo destino desde el nodo base.")
+
+        with tabs[3]:
+            st.write("### Puntuación de Recomendación Difusa [0-10]")
+            scores_df = [
+                {"ID": did, "Loma": destinos_dict[did]["nombre"], "Score Difuso": round(resultado['scores_difusos'][did], 2)}
+                for did in ag['ruta_ids']
             ]
-            st.dataframe(destinos_tabla, height=450, use_container_width=True)
+            st.dataframe(scores_df, use_container_width=True)
+
+        with tabs[4]:
+            st.write("### Diagnóstico Heurístico y Convergencia Evolutiva")
+            st.write(f"**Método de Resolución:** `{ag.get('metodo', 'algoritmo_genetico')}`")
+            st.write(f"**Fitness Máximo Alcanzado:** `{ag.get('fitness', 0):.3f}`")
+            if "grafica_ascii" in ag:
+                st.code(ag["grafica_ascii"], language="text")
+
+    else:
+        st.info("👈 Configura tus preferencias en la barra lateral y presiona **🚀 Generar Ruta Óptima** para calcular tu itinerario personalizado.")
+        st.write("### 🏔️ Catálogo Oficial de las 15 Lomas de Lima:")
+        destinos_tabla = [
+            {"ID": d['id'], "Nombre": d['nombre'], "Distrito": d['distrito'], "Dificultad": d['dificultad'], "Costo": f"S/{d['costo_estimado']}"}
+            for d in destinos
+        ]
+        st.dataframe(destinos_tabla, height=350, use_container_width=True)
 
 
 if __name__ == "__main__":
