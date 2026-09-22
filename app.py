@@ -188,17 +188,31 @@ def main():
 
     if MAPAS_DISPONIBLES:
         mapa = crear_mapa_lomas(destinos, ruta_ids, st.session_state.nodo_base)
-        mapa_output = st_folium(mapa, width="100%", height=480, returned_objects=["last_object_clicked"])
+        mapa_output = st_folium(mapa, width="100%", height=480, returned_objects=["last_active_drawing"])
 
         nueva_pos = None
 
-        # Evento EXCLUSIVO de arrastrar marcador de alojamiento (last_object_clicked)
-        if mapa_output and mapa_output.get("last_object_clicked"):
-            obj = mapa_output["last_object_clicked"]
-            if isinstance(obj, dict) and "lat" in obj and "lng" in obj:
-                nueva_pos = {"lat": round(obj["lat"], 4), "lon": round(obj["lng"], 4)}
+        # Capturar únicamente el arrastre/soltado del marcador (last_active_drawing)
+        if mapa_output and mapa_output.get("last_active_drawing"):
+            drawing = mapa_output["last_active_drawing"]
+            if isinstance(drawing, dict) and "geometry" in drawing:
+                coords = drawing["geometry"].get("coordinates", [])
+                if len(coords) >= 2:
+                    # Folium / GeoJSON usa [lon, lat]
+                    d_lon = round(coords[0], 4)
+                    d_lat = round(coords[1], 4)
 
-        # Si se detectó una posición nueva válida por arrastre distinta a la guardada, actualizar
+                    # Verificar si coincide con una loma catalogada
+                    es_loma = any(
+                        abs(round(d["coordenadas"]["lat"], 4) - d_lat) < 0.005 and
+                        abs(round(d["coordenadas"]["lon"], 4) - d_lon) < 0.005
+                        for d in destinos
+                    )
+
+                    if not es_loma:
+                        nueva_pos = {"lat": d_lat, "lon": d_lon}
+
+        # Si se detectó una nueva posición por arrastre válida, actualizar
         if nueva_pos and (nueva_pos["lat"] != st.session_state.nodo_base["lat"] or nueva_pos["lon"] != st.session_state.nodo_base["lon"]):
             st.session_state.nodo_base = nueva_pos
             st.toast(f"📍 Alojamiento movido a ({nueva_pos['lat']}, {nueva_pos['lon']})", icon="📍")
@@ -211,7 +225,14 @@ def main():
     # SECCIÓN DE RESULTADOS DETALLADOS
     if resultado:
         ag = resultado['ag']
-        st.subheader("📊 Resumen de la Ruta Óptima")
+        col_tit, col_reset = st.columns([4, 1])
+        with col_tit:
+            st.subheader("📊 Resumen de la Ruta Óptima")
+        with col_reset:
+            if st.button("🧹 Nueva Búsqueda", help="Limpia la ruta actual para realizar otra consulta manteniendo tu punto de partida."):
+                st.session_state.resultado_optimizacion = None
+                st.session_state.perfil_usuario = None
+                st.rerun()
 
         # 1. Tarjetas de Métricas Principales (4 Columnas)
         m1, m2, m3, m4 = st.columns(4)
