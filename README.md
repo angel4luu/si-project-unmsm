@@ -49,7 +49,7 @@ La aplicación se implementa con **Streamlit** (web en Python) para la interfaz,
 | **Usuario**          | Turista nacional y extranjero interesado en naturaleza                             |
 | **Temporada**        | Época de garúa (junio–octubre) como temporada óptima                               |
 | **Tecnología**       | Python (Streamlit, folium, scikit-fuzzy, LLM API)                                  |
-| **Días disponibles** | Determina K (destinos visitables): K = ceil(días\_disponibles / 4), con K\_max = 8 |
+| **Días disponibles** | Determina K (destinos visitables): $K = \min(\max(2, \text{días}), 6)$ para $\text{días} \ge 2$, o $K = 1$ (shortcut determinista) |
 | **Stack**            | Streamlit + folium (Python puro, sin frontend separado)                            |
 
 
@@ -137,10 +137,10 @@ flowchart LR
 
 **Detalles técnicos**:
 
-- **Tipo de problema**: Optimización combinatoria NP-hard, multiobjetivo con restricciones
-- **Representación**: Cromosoma de permutación (cada destino aparece una única vez)
-- **Operadores**: Selección por torneo, cruce ordenado (Order Crossover), mutación swap
-- **Criterio de parada**: Número máximo de generaciones o convergencia del fitness
+- **Tipo de problema**: Optimización combinatoria NP-hard, multiobjetivo con restricciones (Orienteering Problem / Selective TSP)
+- **Representación**: Cromosoma de permutación completa ($N=15$) con ventana activa $K$ (fenotipo evaluado).
+- **Operadores**: Selección por torneo, cruce ordenado (Order Crossover, OX) sobre el genotipo completo, mutaciones compuestas y elitismo.
+- **Bifurcación de control**: Si $K = 1$, ejecuta un atajo determinista en $O(N)$ omitiendo el AG.
 
 Se detalla en la sección 6.
 
@@ -148,7 +148,7 @@ Se detalla en la sección 6.
 
 **Función**: Cuantifica de forma continua el nivel de recomendación de cada loma ($S_{\text{difuso}} \in [0, 10]$), combinando **4 variables cualitativas de verdadera incertidumbre** (Saturación Turística, Seguridad Percibida, Estado Ecosistémico/Clima y Accesibilidad Cualitativa) mediante un sistema de inferencia Mamdani. 
 
-Esto permite al sistema razonar sobre factores dinámicos, subjetivos o imprecisos de Lima. Por diseño arquitectónico y para evitar la explosión combinatoria ($3^4 = 81$ reglas vs. $3^9 = 19,683$), las variables deterministas como **Costo** (Soles) y **Distancia** (km) se delegan al Algoritmo Genético como funciones de costo y restricciones duras ($\Omega_{\text{presupuesto}}$, $\Omega_{\text{tiempo}}$), garantizando una estricta y limpia separación de responsabilidades.
+Esto permite al sistema razonar sobre factores dinámicos, subjetivos o imprecisos de Lima. Por diseño arquitectónico y para evitar la explosión combinatoria ($3^4 = 81$ reglas vs. $3^9 = 19,683$), las variables deterministas como **Costo** (Soles) y **Distancia de Desplazamiento Radial** ($d_0 \to d_j$ en km) se delegan al Algoritmo Genético como funciones de costo real y restricciones duras ($\Omega_{\text{presupuesto}}$, $\Omega_{\text{tiempo}}$), garantizando una estricta y limpia separación de responsabilidades.
 
 Se detalla en la sección 5.
 
@@ -161,12 +161,15 @@ flowchart TD
     C --> D["LLM: Extraer preferencias<br/>→ JSON con días disponibles"]
     D --> E["Mapeo: días disponibles → K"]
     E --> F["Sistema Difuso: Evaluar cada loma<br/>→ Score [0,10] por destino"]
-    F --> G["AG: Inicializar población<br/>50 rutas con K destinos"]
-    G --> H["AG: Evaluar Fitness<br/>Suma de scores − penalizaciones"]
-    H --> I["AG: Selección + Cruce + Mutación"]
+    F --> K_CHECK{"¿K == 1?"}
+    K_CHECK -->|Sí| SHORTCUT["Atajo Determinista O(N):<br/>Filtrar por presupuesto y<br/>seleccionar mayor Score Difuso"]
+    K_CHECK -->|No| G["AG: Inicializar población<br/>40 permutaciones N=15 (ventana K)"]
+    G --> H["AG: Evaluar Fitness (Radial + Barreras Relativas)<br/>Suma de scores − penalizaciones"]
+    H --> I["AG: Selección + Cruce OX + Mutaciones"]
     I --> J{"¿Convergencia?<br/>¿o máximo de generaciones?"}
     J -->|No| H
     J -->|Sí| K["Ruta óptima del AG"]
+    SHORTCUT --> K
     K --> L["LLM: Generar itinerario<br/>en lenguaje natural"]
     L --> M["LLM: Generar instrucciones<br/>de acceso por destino"]
     M --> N["Mostrar: Itinerario + Mapa<br/>+ Marcadores de ruta + Cómo llegar"]
@@ -408,27 +411,29 @@ Es la unidad mínima de información dentro de la solución:
 | **Fenotipo** | Rasgo visible manifestado | Destino turístico real que se visita | Lomas del Paraíso (Villa María del Triunfo) |
 | **Interpretación** | Información de un rasgo biológico | Instrucción operativa de viaje | *"El primer día del itinerario se visita Lomas del Paraíso"* |
 
-#### B. El Cromosoma (El Itinerario Completo: Titulares vs. Suplentes)
-El cromosoma es una lista completa con las **15 lomas de Lima**, organizada bajo una **representación basada en prefijos (Prefix-based Representation)** en dos bloques:
-1. **Ventana Activa ($K$ lomas titulares):** Las lomas que el turista **realmente va a recorrer**.
-2. **Reserva Durmiente ($15 - K$ lomas suplentes):** Lomas en lista de espera que no se visitan en este momento, pero están listas para ingresar si una mutación decide hacer un cambio de jugador.
+#### B. El Cromosoma (Cromosoma de Longitud Completa $N=15$ con Ventana Activa $K$)
+El genotipo se define como una **permutación fija de los 15 alelos del catálogo ($N=15$)**, organizada bajo una **representación basada en prefijos (Prefix-based Representation)** en dos bloques:
+1. **Ventana Activa ($K$ lomas titulares / Fenotipo Evaluado):** Las primeras $K$ lomas que el turista **realmente va a recorrer**.
+2. **Reserva Durmiente ($15 - K$ lomas suplentes / Intrones):** Lomas en lista de espera que no se visitan en este momento, pero permanecen en el genotipo para mantener la permutación completa.
+
+> **Garantía de Validez Matemática del Crossover (OX):** Al mantener el genotipo como una permutación fija de longitud $N=15$, se garantiza la validez matemática del operador **Order Crossover (OX)**, eliminando completamente el riesgo de alelos duplicados o faltantes entre subconjuntos disjuntos durante las operaciones de recombinación.
 
 **Ejemplo de Cromosoma para un viaje de 3 días ($K = 3$):**
 
 | Posición (Locus) | Código (Alelo) | Nombre de la Loma | Distrito | Rol en el Cromosoma | ¿El turista lo visita? |
 | :---: | :---: | :--- | :--- | :--- | :---: |
-| **0** | `L0` | Lomas del Paraíso (+ Apu Siqay) | Villa María del Triunfo | **Día 1 (Titular)** | **Sí** |
-| **1** | `L3` | Lomas de Manchay | Ate | **Día 2 (Titular)** | **Sí** |
-| **2** | `L4` | Lomas de Mangomarca | San Juan de Lurigancho | **Día 3 (Titular)** | **Sí** |
-| **3** | `L7` | Lomas de Lúcumo | Pachacámac | Suplente 1 (Lista de espera) | No |
-| **4** | `L1` | Lomas de Carabayllo 2 | Carabayllo | Suplente 2 (Lista de espera) | No |
-| **5** | `L5` | Lomas de Amancaes | Rímac | Suplente 3 (Lista de espera) | No |
+| **0** | `L0` | Lomas del Paraíso (+ Apu Siqay) | Villa María del Triunfo | **Día 1 (Titular - Fenotipo)** | **Sí** |
+| **1** | `L3` | Lomas de Manchay | Ate | **Día 2 (Titular - Fenotipo)** | **Sí** |
+| **2** | `L4` | Lomas de Mangomarca | San Juan de Lurigancho | **Día 3 (Titular - Fenotipo)** | **Sí** |
+| **3** | `L7` | Lomas de Lúcumo | Pachacámac | Suplente 1 (Reserva inactiva) | No |
+| **4** | `L1` | Lomas de Carabayllo 2 | Carabayllo | Suplente 2 (Reserva inactiva) | No |
+| **5** | `L5` | Lomas de Amancaes | Rímac | Suplente 3 (Reserva inactiva) | No |
 | **...** | ... | ... | ... | ... | No |
-| **14** | `L14` | La Loma Amarilla | Santiago de Surco | Suplente 12 (Lista de espera) | No |
+| **14** | `L14` | La Loma Amarilla | Santiago de Surco | Suplente 12 (Reserva inactiva) | No |
 
 ```mermaid
 flowchart LR
-    subgraph Genotipo["Genotipo: Permutacion Completa N = 15"]
+    subgraph Genotipo["Genotipo: Permutacion Completa N = 15 (OX seguro)"]
         direction LR
         subgraph Activos["Ventana Activa (Fenotipo Evaluado: K genes)"]
             G1["Locus 0: L0"] --- G2["Locus 1: L3"] --- G3["Locus 2: L4"]
@@ -440,15 +445,15 @@ flowchart LR
     end
 ```
 
-*Conclusión del Cromosoma:* La ruta evaluada para el turista es únicamente `L0 -> L3 -> L4`. Las demás 12 lomas no generan costo ni distancia, pero garantizan que el operador de cruce no tenga huecos vacíos ni lomas repetidas.
+*Conclusión del Cromosoma:* La ruta evaluada fenotípicamente para el turista es únicamente `L0 -> L3 -> L4`. Las demás 12 lomas no generan costo ni distancia, pero garantizan que el operador de cruce OX opere sobre una permutación completa válida sin huecos ni duplicados.
 
 #### C. La Población (Los 40 Planes de Viaje Compitiendo)
 La población es el conjunto de **40 itinerarios alternativos** generados al inicio de forma aleatoria:
 
 | Individuo | Itinerario Activo ($K = 3$) | Lomas en Reserva (Suplentes) | Diagnóstico del Plan | Calidad Inicial Estimada |
 | :---: | :--- | :--- | :--- | :--- |
-| **Plan 1** | Paraíso $\to$ Manchay $\to$ Mangomarca | Lúcumo, Amancaes, Ancón, ... | Lomas cercanas en Lima Sur/Este, gasto bajo (S/ 35). | **Alta (Candidato a Campeón)** |
-| **Plan 2** | Lúcumo $\to$ Ancón $\to$ Lachay | Paraíso, Carabayllo, Primavera, ... | Muy dispersas (>120 km de viaje), pasajes muy caros. | **Baja (Se extinguirá rápido)** |
+| **Plan 1** | Paraíso $\to$ Manchay $\to$ Mangomarca | Lúcumo, Amancaes, Ancón, ... | Lomas cercanas al nodo base, gasto bajo (S/ 35). | **Alta (Candidato a Campeón)** |
+| **Plan 2** | Lúcumo $\to$ Ancón $\to$ Lachay | Paraíso, Carabayllo, Primavera, ... | Muy distantes del centro (>120 km radiales), pasajes muy caros. | **Baja (Se extinguirá rápido)** |
 | **Plan 3** | Carabayllo $\to$ Primavera $\to$ Amancaes | Lúcumo, Manchay, Paraíso, ... | Concentradas en Lima Norte, costo intermedio. | **Media (Mejorable con cruce)** |
 | **...** | *(37 planes adicionales generados)* | ... | ... | ... |
 
@@ -457,57 +462,60 @@ La población es el conjunto de **40 itinerarios alternativos** generados al ini
 ### 6.2 Mapeo Temporal Urbano Dinámico y Atajo Determinista
 
 1. **Mapeo Urbano Dinámico ($K = \min(\max(2, \text{días}), 6)$):**  
-   En Lima Metropolitana, el senderismo en lomas se realiza como una excursión diurna (1 loma por día). Por tanto, para $\text{días} \ge 2$, se asigna $K = \text{días}$ acotado a un mínimo de 2 (para garantizar espacio de búsqueda combinatorio formal) y un máximo de 6 lomas.
+   En Lima Metropolitana, el senderismo en lomas se realiza como una excursión diurna con un destino por día. Por tanto, para $\text{días} \ge 2$, se asigna $K = \text{días}$ acotado a un mínimo de 2 (para garantizar un espacio de búsqueda combinatorio formal) y un máximo de 6 lomas visitables. Esto permite la exploración del AG y el cómputo de distancias relativas.
 2. **Bifurcación de Control para Horizonte Unitario ($K = 1$):**  
-   Cuando el usuario dispone de 1 solo día, no existe un problema combinatorio de ordenamiento (espacio de solo 15 estados). El orquestador activa un **atajo determinista (shortcut en $O(N)$)**: filtra las lomas dentro del presupuesto y escoge de inmediato la de mayor score difuso, evitando sobrecosto computacional redundante de 50 generaciones bioinspiradas.
+   Cuando el usuario declara disponer de un solo día ($K = 1$), el orquestador implementa un **atajo condicional (shortcut determinista en $O(N)$)** que omite la ejecución del algoritmo bioinspirado. El sistema filtra el catálogo por presupuesto y retorna de forma determinista la loma con el mayor score difuso ($S_{\text{difuso}}$), evitando sobrecosto computacional redundante de 50 generaciones.
 
 ---
 
-### 6.3 La Función Fitness (Aptitud) Explicada en Palabras
+### 6.3 La Función Fitness (Aptitud) con Costo Radial y Escalado Adimensional Relativo
 
-Antes de cualquier fórmula matemática, el fitness representa la **calificación general del viaje (de 0 a 30 puntos)** según la siguiente regla en palabras:
+Antes de cualquier fórmula matemática, el fitness representa la **calificación general del viaje** según la siguiente regla en palabras:
 
 $$
-\mathbf{Nota\ del\ Viaje\ (Fitness)} = (\text{Belleza\ y\ Calidad\ de\ las\ Lomas}) - (\text{Desgaste\ por\ Viajar\ Lejos}) - (\text{Multa\ por\ Pasarse\ de\ Presupuesto}) - (\text{Multa\ por\ Falta\ de\ Tiempo})
+\mathbf{Nota\ del\ Viaje\ (Fitness)} = (\text{Belleza\ y\ Calidad\ de\ las\ Lomas}) - (\text{Costo\ de\ Desplazamiento\ Radial}) - (\text{Multa\ Relativa\ de\ Presupuesto}) - (\text{Multa\ Relativa\ de\ Tiempo})
 $$
+
+#### A. Costo de Desplazamiento Radial ($d_0 \to d_j$)
+Se sustituyó la sumatoria de traslados inter-lomas por una métrica Haversine de **viajes radiales independientes desde el nodo base del usuario ($d_0$)** hacia cada loma $d_j$. Este ajuste modela la logística metropolitana real en Lima, considerando el retorno diario al alojamiento en lugar de travesías continuas cerradas.
+
+#### B. Escalado Adimensional Relativo en Penalizaciones de Fitness
+Se reemplazaron las penalizaciones cuadráticas absolutas por **barreras relativas normalizadas $(\Delta / \text{Límite})^2$** para presupuesto y tiempo. Esto evita la distorsión de escala (*fitness scaling problem*), impidiendo que excesos monetarios o temporales marginales anulen la presión selectiva del beneficio difuso acumulado ($S_{\text{difuso}}$).
 
 #### Tabla de Criterios: ¿Qué suma puntos y qué resta puntos?
 
 | Criterio Evaluado | Efecto en la Nota | ¿Cómo se calcula en palabras? | Justificación Práctica |
 | :--- | :---: | :--- | :--- |
-| **Belleza y Calidad Ecoturística** | **Suma (+)** | Suma de los scores difusos (0 a 10) de las lomas titulares. | El turista busca lomas verdes, seguras y con senderos accesibles. |
-| **Desgaste por Traslados** | **Resta (-)** | Kilómetros acumulados de viaje entre loma y loma dividido entre 100. | Viajar horas en bus agota al turista y quita tiempo de disfrute. |
-| **Multa por Exceso de Presupuesto** | **Castiga (-)** | Si gastas menos o igual que tu presupuesto, multa = 0. Si te pasas, multa proporcional al exceso al cuadrado. | El viaje debe ser pagable; si sobrepasa el dinero del usuario, pierde viabilidad. |
-| **Multa por Falta de Tiempo** | **Castiga (-)** | Si las caminatas caben en las 8h útiles por día, multa = 0. Si faltan horas, penaliza al cuadrado. | Las jornadas deben ser realizables sin sobreexigir físicamente al usuario. |
+| **Belleza y Calidad Ecoturística** | **Suma (+)** | Suma de los scores difusos ($S_{\text{difuso}} \in [0, 10]$) de las $K$ lomas titulares. | El turista busca lomas verdes, seguras y con senderos accesibles. |
+| **Costo de Desplazamiento Radial** | **Resta (-)** | Suma de distancias radiales Haversine desde el nodo base $d_0$ a cada loma $d_j$ activa, escalada por $\beta / 100$. | Refleja el traslado diario real ida y vuelta desde el alojamiento. |
+| **Multa Relativa de Presupuesto** | **Castiga (-)** | Barrera relativa cuadrática $\lambda_1 \cdot (\Delta_{\text{presupuesto}} / \text{Presupuesto})^2$. Si no se pasa, es $0.0$. | Normaliza el exceso monetario evitando distorsionar la escala frente al score difuso. |
+| **Multa Relativa de Tiempo** | **Castiga (-)** | Barrera relativa cuadrática $\lambda_2 \cdot (\Delta_{\text{tiempo}} / \text{TiempoDisponible})^2$. Si no se pasa, es $0.0$. | Evalúa las horas útiles diarias ($8\text{h}/\text{día}$) de forma adimensional y proporcional. |
 
-#### Ejemplo Numérico Paso a Paso (Sin Fórmulas Agobiantes)
+#### Ejemplo Numérico Paso a Paso
 
-Supongamos que un usuario dispone de **S/ 60.00 de presupuesto** y **3 días**.
+Supongamos que un usuario dispone de **S/ 60.00 de presupuesto** y **3 días** ($K=3$), alojado en el Centro de Lima ($d_0$).
 
 Evaluemos el **Plan 1** (`L0: Paraíso` $\to$ `L3: Manchay` $\to$ `L4: Mangomarca`):
 
 | Paso | Concepto Evaluado | Datos Reales de las Lomas | Cuenta en Palabras | Puntos Aportados |
 | :---: | :--- | :--- | :--- | :---: |
-| **1** | **Calidad de las Lomas** | Paraíso (8.5 pts) + Manchay (7.5 pts) + Mangomarca (8.0 pts) | Sumar las notas difusas de cada loma | **+24.00 pts** |
-| **2** | **Traslados en bus** | Paraíso a Manchay (7.5 km) + Manchay a Mangomarca (16.0 km) | Total 23.5 km $\implies$ Restar $23.5 / 100$ | **-0.23 pts** |
-| **3** | **Gasto del Viaje** | Entradas y pasajes: S/ 15 + S/ 10 + S/ 10 = S/ 35 | Costó S/ 35 vs Límite S/ 60 $\implies$ ¡No se pasó! | **-0.00 pts** (Sin multa) |
-| **4** | **Horas de Caminata** | Senderos: 4.5h + 3.5h + 4.0h = 12 horas totales | 12h caben en 3 días (24h útiles) $\implies$ Tiempo OK | **-0.00 pts** (Sin multa) |
-| **FINAL** | **Calificación Total** | **Fitness = 24.00 - 0.23 - 0.00 - 0.00** | Nota global del itinerario | **23.77 puntos** |
+| **1** | **Calidad de las Lomas** | Paraíso (8.5 pts) + Manchay (7.5 pts) + Mangomarca (8.0 pts) | Sumar las notas difusas de cada loma activa | **+24.00 pts** |
+| **2** | **Desplazamiento Radial desde $d_0$** | $d(d_0, L_0) = 18.5\text{ km} + d(d_0, L_3) = 14.0\text{ km} + d(d_0, L_4) = 9.5\text{ km} = 42.0\text{ km}$ | Restar $\beta \cdot (42.0 / 100.0)$ con $\beta = 1.0$ | **-0.42 pts** |
+| **3** | **Gasto del Viaje** | Entradas y pasajes: S/ 15 + S/ 10 + S/ 10 = S/ 35 | Costó S/ 35 vs Límite S/ 60 $\implies$ Exceso = S/ 0 $\implies$ Multa relativa = 0 | **-0.00 pts** (Sin multa) |
+| **4** | **Horas de Caminata** | Senderos: 4.5h + 3.5h + 4.0h = 12 horas totales | 12h caben en 3 días (24h útiles) $\implies$ Exceso = 0h $\implies$ Multa relativa = 0 | **-0.00 pts** (Sin multa) |
+| **FINAL** | **Calificación Total** | **Fitness = 24.00 - 0.42 - 0.00 - 0.00** | Nota global del itinerario | **23.58 puntos** |
 
-*Comparación:* Si otro plan gastara S/ 90 (50% de sobrecosto), el algoritmo le cobraría una multa de $-6.25$ puntos y su nota caería a **17.52**. En el torneo, el Plan 1 (23.77 pts) vencerá fácilmente al plan caro.
-
-#### Formulación Matemática con Escalado Adimensional Relativo
-
-Para formalizar lo anterior y evitar el *Fitness Scaling Problem*, se implementan barreras relativas:
+#### Formulación Matemática Formal
 
 $$
-\boxed{F(x) = \sum_{j=1}^{K} S_{\text{difuso}}(d_j) \;-\; \beta \cdot \left( \frac{\text{DistanciaTotal}(x)}{100} \right) \;-\; \lambda_1 \cdot \left(\frac{\Delta_{\text{presupuesto}}}{\text{Presupuesto}}\right)^2 \;-\; \lambda_2 \cdot \left(\frac{\Delta_{\text{tiempo}}}{\text{TiempoDisponible}}\right)^2 \;-\; \Omega_{\text{unicidad}}}
+\boxed{F(x) = \sum_{j=1}^{K} S_{\text{difuso}}(d_j) \;-\; \beta \cdot \left( \frac{\sum_{j=1}^{K} \text{Haversine}(d_0, d_j)}{100} \right) \;-\; \lambda_1 \cdot \left(\frac{\Delta_{\text{presupuesto}}}{\text{Presupuesto}}\right)^2 \;-\; \lambda_2 \cdot \left(\frac{\Delta_{\text{tiempo}}}{\text{TiempoDisponible}}\right)^2 \;-\; \Omega_{\text{unicidad}}}
 $$
 
 Donde:
+- $\text{Haversine}(d_0, d_j)$ es la distancia radial desde el nodo base del usuario ($d_0$) a la loma titular $d_j$.
 - $\Delta_{\text{presupuesto}} = \max(0,\; \text{CostoTotal}(x) - \text{Presupuesto})$ con $\lambda_1 = 25.0$.
 - $\Delta_{\text{tiempo}} = \max(0,\; \text{HorasTotales}(x) - \text{Días} \times 8.0)$ con $\lambda_2 = 25.0$.
-- $\Omega_{\text{unicidad}} = 1000 \cdot (K - |\text{set}(x)|)$ como salvaguarda de unicidad.
+- $\Omega_{\text{unicidad}} = 1000 \cdot (K - |\text{set}(x_{1..K})|)$ como salvaguarda de unicidad en la ventana activa.
 
 ---
 
@@ -516,10 +524,10 @@ Donde:
 | Operador Genético | Analogía Biológica | Analogía en el Viaje Turístico | ¿Qué hace exactamente en el código? |
 | :--- | :--- | :--- | :--- |
 | **Selección por Torneo** | Supervivencia del más apto | Casting: 3 planes al azar compiten y clasifica el de mejor nota | Toma 3 cromosomas de la población y selecciona el de mayor fitness ($k_{\text{torneo}}=3$). |
-| **Cruce (Order Crossover)** | Reproducción sexual | Fusión de ideas: combinar las mejores paradas de dos planes | El hijo hereda un tramo del Padre 1 y se completa con el orden del Padre 2 sobre los 15 alelos. |
-| **Mutación Swap (Reordenar)** | Mutación genética puntual | Cambiar el orden de dos días para evitar tráfico en Lima | Intercambia dos posiciones dentro de la ventana activa para acortar distancia (prob. 40%). |
-| **Mutación Reemplazo (Sustituir)** | Variación alélica | Cambio de jugador: sacar una loma cara y meter una suplente económica | Intercambia un gen activo con un gen de la reserva durmiente (prob. 40%). |
-| **Mutación Inversión (2-Opt)** | Reordenamiento cromosómico | Desenredo de ruta: invertir un tramo que hacía un cruce en zigzag | Invierte un subsegmento continuo dentro del viaje activo (prob. 20%). |
+| **Cruce (Order Crossover, OX)** | Reproducción sexual | Fusión de ideas: combinar las mejores paradas de dos planes | Preserva el orden relativo sobre la permutación completa de $N=15$ alelos sin duplicados. |
+| **Mutación Swap (Reordenar)** | Mutación genética puntual | Cambiar el orden de dos días para optimizar logística | Intercambia dos posiciones dentro de la ventana activa (prob. 30%). |
+| **Mutación Reemplazo (Sustituir)** | Variación alélica | Cambio de jugador: sacar una loma cara y meter una suplente económica | Intercambia un gen activo con un gen de la reserva durmiente [K:15] (prob. 30%). |
+| **Mutación Inversión (2-Opt)** | Reordenamiento cromosómico | Desenredo de ruta: invertir un tramo dentro de la ventana activa | Invierte un subsegmento continuo dentro de la ventana activa (prob. 20%). |
 | **Elitismo** | Preservación del linaje campeón | El campeón clasifica directo a la final sin jugar eliminatorias | Copia los 2 mejores planes intactos a la siguiente generación ($E=2$). |
 
 
@@ -527,15 +535,15 @@ Donde:
 
 ```mermaid
 flowchart TB
-    P["Poblacion 50 rutas"] --> E["Evaluar Fitness F(x) = Σwᵢ·Sᵢ - Ω"]
+    P["Poblacion 40 permutaciones N=15"] --> E["Evaluar Fitness F(x) sobre Ventana K<br/>(Distancia Radial + Barreras Relativas)"]
     E --> S["Seleccion por Torneo k=3"]
-    S --> C["Crossover OX"]
-    C --> M["Mutacion Swap/Insercion"]
-    M --> EL["Elitismo: Mejores E individuos"]
-    EL --> N["Nueva Poblacion 50"]
-    N --> C2{¿Convergencia?o Max gen?}
+    S --> C["Crossover Order Crossover (OX) sobre N=15"]
+    C --> M["Mutaciones Compuestas (Swap / Reemplazo / 2-Opt)"]
+    M --> EL["Elitismo: Mejores E=2 individuos"]
+    EL --> N["Nueva Poblacion 40"]
+    N --> C2{"¿Convergencia? o Max 50 gen?"}
     C2 -->|No| E
-    C2 -->|Si| R[" Ruta Óptima"]
+    C2 -->|Si| R["Ruta Óptima (Ventana K)"]
 ```
 
 ---
@@ -706,14 +714,14 @@ El **método de suma ponderada** es la técnica estándar en optimización multi
 - Los pesos permiten **personalizar** la optimización según las prioridades del usuario.
 - La literatura de optimización (Deb, 2001) establece que para problemas con $n$ objetivos, la suma ponderada es una aproximación válida cuando los pesos representan las preferencias del decisor.
 
-### 10.4 ¿ Por qué incluir rutas de acceso como módulo complementario y no como capa de optimización?
+### 10.4 ¿Por qué incluir rutas de acceso como módulo complementario y no como capa de optimización?
 
-- **Mantiene el fitness simple**: Si las rutas de acceso entraran en el fitness, la función necesitaría modelar la topografía del sistema de transporte de Lima, lo cual aumentaría drásticamente la complejidad.
-- **Separa responsabilidades**: El AG optimiza el "qué" y el "orden", el módulo de acceso resuelve el "cómo".
-- **El AG ya considera la distancia** directamente en su función objetivo calculando los tramos Haversine entre destinos consecutivos.
-- **El LLM genera las instrucciones dinámicamente**, lo que permite actualizar la información de transporte sin reconfigurar el AG.
+- **Mantiene el fitness simple**: Si las rutas de acceso detalladas entraran en el fitness, la función necesitaría modelar la topografía completa del sistema de transporte de Lima, aumentando drásticamente la complejidad computacional.
+- **Separa responsabilidades**: El AG optimiza la selección ($K$) y el orden de destinos según desplazamientos radiales ($d_0 \to d_j$), mientras que el módulo de acceso resuelve el transporte urbano detallado.
+- **El AG considera la logística metropolitana** directamente evaluando la distancia Haversine radial desde el nodo base del usuario ($d_0$).
+- **El LLM genera las instrucciones dinámicamente**, permitiendo actualizar la información de rutas y transporte sin reconfigurar la función de aptitud del AG.
 
-### 10.5 ¿ Por qué Streamlit y folium para la interfaz?
+### 10.5 ¿Por qué Streamlit y folium para la interfaz?
 
 Se eligió Streamlit en lugar de frameworks de frontend separados por estas razones:
 
@@ -729,18 +737,17 @@ Se eligió Streamlit en lugar de frameworks de frontend separados por estas razo
 Se adoptó esta decisión técnica y metodológica por tres fundamentos de diseño:
 
 1. **Evitar la explosión combinatoria (Maldición de la Dimensionalidad):** En un sistema Mamdani, 9 variables con 3 términos lingüísticos generan $3^9 = 19,683$ reglas. Con pocas reglas, más del 99% del espacio queda sin activar, provocando que la defuzzificación en `scikit-fuzzy` falle (arrojando errores `NaN` o valores planos de 0). Con **4 variables**, el espacio máximo es de $3^4 = 81$ combinaciones, permitiendo una cobertura completa y matemáticamente verificable con 20 reglas bien calibradas.
-2. **Separación rigurosa de responsabilidades (Incertidumbre vs. Determinismo):** La lógica difusa modela exclusivamente información cualitativa o incierta (seguridad ciudadana, clima y verdor estacional, saturación y calidad del sendero). Las magnitudes exactas como el **Costo (Soles)** y la **Distancia (km)** son deterministas y pertenecen al **Algoritmo Genético** como funciones de costo real y restricciones duras cuadráticas ($\Omega_{\text{presupuesto}}$, $\Omega_{\text{tiempo}}$).
-3. **Eliminación de la doble penalización:** Si el costo y la distancia se evaluaran tanto en el sistema difuso como en las restricciones duras del AG, se distorsionaría la función de aptitud al castigar el mismo factor dos veces.
+2. **Separación rigurosa de responsabilidades (Incertidumbre vs. Determinismo):** La lógica difusa modela exclusivamente información cualitativa o incierta (seguridad ciudadana, clima y verdor estacional, saturación y calidad del sendero). Las magnitudes exactas como el **Costo (Soles)** y la **Distancia Radial (km)** son deterministas y pertenecen al **Algoritmo Genético** como funciones de costo real y barreras relativas adimensionales ($\Omega_{\text{presupuesto}}$, $\Omega_{\text{tiempo}}$).
+3. **Eliminación de la doble penalización:** Si el costo y la distancia se evaluaran tanto en el sistema difuso como en las restricciones del AG, se distorsionaría la función de aptitud al castigar el mismo factor dos veces.
 
-### 10.7 ¿ Por qué el mapeo de días\_disponibles → K?
+### 10.7 ¿Por qué el Mapeo Temporal Urbano Dinámico y el Atajo para $K = 1$?
 
-La función $K = \lceil \text{días\_disponibles} / 4 \rceil$ (con $K_{max} = 8$) se fundamenta en que:
+La asignación $K = \min(\max(2, \text{días}), 6)$ y la bifurcación para $K = 1$ se fundamentan en:
 
-- Un destino promedio requiere \~4 días entre traslado, visita y descanso
-- El usuario con 15 días puede visitar \~3-4 destinos; con 30 días, \~7-8 destinos
-- Es una función constante (sin costo computacional) que se ejecuta antes del AG
-- No cambia la representación del cromosoma ni los operadores genéticos
-- Mantiene el problema como permutación pura, compatible con el Order Crossover
+- **Logística metropolitana real:** Las lomas de Lima se recorren como excursiones diurnas independientes de un día ($1 \text{ día} = 1 \text{ loma}$), requiriendo el retorno diario al alojamiento ($d_0$).
+- **Garantía de espacio combinatorio formal ($K \ge 2$):** Para 2 o más días, se asegura una ventana activa de al menos 2 destinos, permitiendo la exploración del AG y la comparación de distancias relativas.
+- **Eficiencia computacional ($K = 1$):** Un itinerario de 1 día carece de un problema combinatorio de ordenamiento (espacio trivial de solo 15 estados). El atajo determinista en $O(N)$ filtra las lomas en presupuesto y selecciona la de mayor score difuso, ahorrando sobrecosto computacional sin ejecutar 50 generaciones redundantes.
+- **Validez del operador Order Crossover (OX):** La asignación de $K$ no altera la longitud fija del cromosoma genotípico ($N=15$), preservando la permutación completa exigida por el operador de cruce.
 
 ---
 
