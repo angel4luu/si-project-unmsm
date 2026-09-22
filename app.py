@@ -181,30 +181,24 @@ def main():
 
     # ÁREA PRINCIPAL: Layout Jerárquico Reorganizado
     st.subheader("🗺️ Mapa Interactivo de las Lomas de Lima")
-    st.caption("📍 **Alojamiento (Pin Rojo 🏠):** Puedes **arrastrar el marcador** o hacer **clic en cualquier punto del mapa** para mover tu hospedaje/nodo base.")
+    st.caption("📍 **Alojamiento (Pin Rojo 🏠):** Arrastra el marcador rojo en el mapa para ubicar tu hospedaje/nodo base.")
 
     resultado = st.session_state.resultado_optimizacion
     ruta_ids = resultado['ag']['ruta_ids'] if resultado else None
 
     if MAPAS_DISPONIBLES:
         mapa = crear_mapa_lomas(destinos, ruta_ids, st.session_state.nodo_base)
-        mapa_output = st_folium(mapa, width="100%", height=480, returned_objects=["last_clicked", "last_object_clicked"])
+        mapa_output = st_folium(mapa, width="100%", height=480, returned_objects=["last_object_clicked"])
 
         nueva_pos = None
 
-        # 1. Evento de arrastrar marcador (last_object_clicked / marker drag)
+        # Evento EXCLUSIVO de arrastrar marcador de alojamiento (last_object_clicked)
         if mapa_output and mapa_output.get("last_object_clicked"):
             obj = mapa_output["last_object_clicked"]
             if isinstance(obj, dict) and "lat" in obj and "lng" in obj:
                 nueva_pos = {"lat": round(obj["lat"], 4), "lon": round(obj["lng"], 4)}
 
-        # 2. Evento de clic en mapa
-        elif mapa_output and mapa_output.get("last_clicked"):
-            clic = mapa_output["last_clicked"]
-            if isinstance(clic, dict) and "lat" in clic and "lng" in clic:
-                nueva_pos = {"lat": round(clic["lat"], 4), "lon": round(clic["lng"], 4)}
-
-        # Si se detectó una posición nueva distinta a la guardada, actualizar
+        # Si se detectó una posición nueva válida por arrastre distinta a la guardada, actualizar
         if nueva_pos and (nueva_pos["lat"] != st.session_state.nodo_base["lat"] or nueva_pos["lon"] != st.session_state.nodo_base["lon"]):
             st.session_state.nodo_base = nueva_pos
             st.toast(f"📍 Alojamiento movido a ({nueva_pos['lat']}, {nueva_pos['lon']})", icon="📍")
