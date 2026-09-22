@@ -109,62 +109,60 @@ def main():
     # Título Principal
     st.title("Sistema Inteligente de Rutas de Trekking en las Lomas de Lima")
 
-    # Barra lateral
+    # Barra lateral unificada (Diseño Híbrido UX)
     with st.sidebar:
-        st.header("Configuración del Turista")
+        st.header("🎛️ Perfil del Turista")
 
-        modo_entrada = st.radio("Modo de Entrada:", ["Texto Libre (IA Generativa)", "Formulario Guiado"])
+        st.subheader("1. Parámetros de Ruta (AG)")
+        dias_input = st.slider("Días disponibles para viajar:", min_value=1, max_value=15, value=3, help="Determina cuántas lomas (K) se seleccionarán.")
+        presupuesto_input = st.slider("Presupuesto máximo total (S/):", min_value=15, max_value=300, value=60, step=5, help="Límite monetario para la penalización del AG.")
+        condicion_input = st.selectbox("Condición física del viajero:", ["Fácil", "Moderado", "Difícil"], index=1)
 
-        if modo_entrada == "Texto Libre (IA Generativa)":
-            texto_usuario = st.text_area(
-                "Describe tu viaje deseado:",
-                value="Quiero hacer trekking 3 días en lomas verdes con dificultad moderada y no gastar más de 60 soles.",
-                height=100
-            )
-            dias_input = None
-            presupuesto_input = None
-        else:
-            texto_usuario = ""
-            dias_input = st.slider("Días disponibles para viajar:", min_value=1, max_value=15, value=3)
-            presupuesto_input = st.slider("Presupuesto máximo (Soles):", min_value=15, max_value=200, value=60, step=5)
-            condicion_input = st.selectbox("Condición física:", ["Fácil", "Moderado", "Difícil"], index=1)
-            intereses_input = st.multiselect("Intereses:", ["Naturaleza", "Arqueología", "Vistas Panorámicas", "Aventura"], default=["Naturaleza"])
+        st.subheader("2. Preferencias Difusas y Clima (IA)")
+        texto_usuario = st.text_area(
+            "Preferencias adicionales (Opcional):",
+            placeholder="Ejemplo: 'Prefiero lomas poco concurridas (baja saturación), muy seguras, con clima de neblina/garúa y senderos de acceso fácil.'",
+            height=110,
+            help="Orienta las 4 variables difusas: Saturación esperada, Nivel de Seguridad, Clima/Verdor y Accesibilidad."
+        )
 
         st.markdown("---")
-        st.caption("💡 **Tip de Alojamiento:** Puedes hacer **clic sobre el mapa** para marcar exactamente la ubicación de tu hospedaje/nodo base.")
+        st.caption("📍 **Punto de Partida (Alojamiento):** Arrastra el marcador rojo 🏠 en el mapa para establecer tu ubicación exacta.")
 
-        btn_optimizar = st.button("Generar Ruta Óptima", type="primary", use_container_width=True)
+        btn_optimizar = st.button("🚀 Generar Ruta Óptima", type="primary", use_container_width=True)
 
         if btn_optimizar:
             with st.spinner("Procesando: LLM -> Mapeo -> Lógica Difusa -> Algoritmo Genético..."):
-                # 1. Extracción de entidades
-                if modo_entrada == "Texto Libre (IA Generativa)":
-                    perfil = extraer_preferencias_usuario(texto_usuario)
+                # 1. Extracción de entidades de texto libre o fallback a formulario
+                if texto_usuario.strip():
+                    perfil_extraido = extraer_preferencias_usuario(texto_usuario)
                 else:
-                    perfil = {
-                        "dias_disponibles": dias_input,
-                        "presupuesto_max": float(presupuesto_input),
-                        "condicion_fisica": condicion_input,
-                        "intereses": intereses_input,
-                        "clima_preferido": "Garúa"
-                    }
+                    perfil_extraido = {}
+
+                perfil = {
+                    "dias_disponibles": dias_input,
+                    "presupuesto_max": float(presupuesto_input),
+                    "condicion_fisica": condicion_input,
+                    "clima_preferido": perfil_extraido.get("clima_preferido", "Garúa"),
+                    "intereses": perfil_extraido.get("intereses", ["Naturaleza"]),
+                    "nodo_base": st.session_state.nodo_base
+                }
 
                 nodo_base_actual = st.session_state.nodo_base
-                perfil["nodo_base"] = nodo_base_actual
 
                 # 2. Mapeo K
-                k = dias_a_k(perfil.get("dias_disponibles", 3))
+                k = dias_a_k(perfil["dias_disponibles"])
 
-                # 3. Lógica Difusa
+                # 3. Lógica Difusa (Evaluación de incertidumbre)
                 scores_difusos = calcular_scores_todos_destinos(destinos)
 
-                # 4. Algoritmo Genético (con costo de desplazamiento radial desde nodo_base marcado en mapa)
+                # 4. Algoritmo Genético (con costo de desplazamiento radial desde nodo_base)
                 resultado_ag = optimizar_ruta_lomas(
                     destinos=destinos,
                     scores_difusos=scores_difusos,
                     k=k,
-                    presupuesto=perfil.get("presupuesto_max", 60.0),
-                    dias_disponibles=perfil.get("dias_disponibles", 3),
+                    presupuesto=perfil["presupuesto_max"],
+                    dias_disponibles=perfil["dias_disponibles"],
                     nodo_base=nodo_base_actual
                 )
 
