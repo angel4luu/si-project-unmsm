@@ -45,8 +45,8 @@ def crear_mapa_lomas(destinos, ruta_ids=None, nodo_base=None):
     if nodo_base:
         folium.Marker(
             location=[nodo_base["lat"], nodo_base["lon"]],
-            popup=folium.Popup("<div style='font-family: sans-serif;'><b>📍 Tu Alojamiento (Nodo Base)</b><br/>¡Arrastra este pin o haz clic en el mapa para mover tu hospedaje!</div>", max_width=220),
-            tooltip="📍 Tu Alojamiento (Arrastra para mover)",
+            popup=folium.Popup("<div style='font-family: sans-serif;'><b>Tu Alojamiento (Nodo Base)</b><br/>¡Arrastra este pin o haz clic en el mapa para mover tu hospedaje!</div>", max_width=220),
+            tooltip="Tu Alojamiento (Arrastra para mover)",
             icon=folium.Icon(color="red", icon="home", prefix="fa"),
             draggable=True
         ).add_to(mapa)
@@ -111,14 +111,14 @@ def main():
 
     # Barra lateral unificada (Diseño Híbrido UX)
     with st.sidebar:
-        st.header("🎛️ Perfil del Turista")
+        st.header("Perfil del Turista")
 
-        st.subheader("1. Parámetros de Ruta (AG)")
+        st.subheader("1. Parámetros de ruta (AG)")
         dias_input = st.slider("Días disponibles para viajar:", min_value=1, max_value=15, value=3, help="Determina cuántas lomas (K) se seleccionarán.")
         presupuesto_input = st.slider("Presupuesto máximo total (S/):", min_value=15, max_value=300, value=60, step=5, help="Límite monetario para la penalización del AG.")
         condicion_input = st.selectbox("Condición física del viajero:", ["Fácil", "Moderado", "Difícil"], index=1)
 
-        st.subheader("2. Preferencias Difusas y Clima (IA)")
+        st.subheader("2. Preferencias difusas y clima (IA)")
         texto_usuario = st.text_area(
             "Preferencias adicionales (Opcional):",
             placeholder="Ejemplo: 'Prefiero lomas poco concurridas (baja saturación), muy seguras, con clima de neblina/garúa y senderos de acceso fácil.'",
@@ -127,9 +127,9 @@ def main():
         )
 
         st.markdown("---")
-        st.caption("📍 **Punto de Partida (Alojamiento):** Arrastra el marcador rojo 🏠 en el mapa para establecer tu ubicación exacta.")
+        st.caption("**Punto de Partida (Alojamiento):** Arrastra el marcador rojo en el mapa para establecer tu ubicación exacta.")
 
-        btn_optimizar = st.button("🚀 Generar Ruta Óptima", type="primary", use_container_width=True)
+        btn_optimizar = st.button("Generar ruta óptima", type="primary", use_container_width=True)
 
         if btn_optimizar:
             with st.spinner("Procesando: LLM -> Mapeo -> Lógica Difusa -> Algoritmo Genético..."):
@@ -180,8 +180,8 @@ def main():
                 st.success("¡Ruta óptima calculada exitosamente!")
 
     # ÁREA PRINCIPAL: Layout Jerárquico Reorganizado
-    st.subheader("🗺️ Mapa Interactivo de las Lomas de Lima")
-    st.caption("📍 **Alojamiento (Pin Rojo 🏠):** Arrastra el marcador rojo en el mapa para ubicar tu hospedaje/nodo base.")
+    st.subheader("Mapa de las Lomas de Lima")
+    st.caption("**Alojamiento (Pin Rojo):** Arrastra el marcador rojo en el mapa para ubicar tu hospedaje/nodo base.")
 
     resultado = st.session_state.resultado_optimizacion
     ruta_ids = resultado['ag']['ruta_ids'] if resultado else None
@@ -215,7 +215,7 @@ def main():
         # Si se detectó una nueva posición por arrastre válida, actualizar
         if nueva_pos and (nueva_pos["lat"] != st.session_state.nodo_base["lat"] or nueva_pos["lon"] != st.session_state.nodo_base["lon"]):
             st.session_state.nodo_base = nueva_pos
-            st.toast(f"📍 Alojamiento movido a ({nueva_pos['lat']}, {nueva_pos['lon']})", icon="📍")
+            st.toast(f"Alojamiento movido a ({nueva_pos['lat']}, {nueva_pos['lon']})")
             st.rerun()
     else:
         st.info("Para visualizar el mapa interactivo en Folium, instala `pip install folium streamlit-folium`.")
@@ -227,35 +227,35 @@ def main():
         ag = resultado['ag']
         col_tit, col_reset = st.columns([4, 1])
         with col_tit:
-            st.subheader("📊 Resumen de la Ruta Óptima")
+            st.subheader("Resumen de la ruta óptima")
         with col_reset:
-            if st.button("🧹 Nueva Búsqueda", help="Limpia la ruta actual para realizar otra consulta manteniendo tu punto de partida."):
+            if st.button("Nueva búsqueda", help="Limpia la ruta actual para realizar otra consulta manteniendo tu punto de partida."):
                 st.session_state.resultado_optimizacion = None
                 st.session_state.perfil_usuario = None
                 st.rerun()
 
         # 1. Tarjetas de Métricas Principales (4 Columnas)
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("🟢 Destinos (K)", f"{resultado['k']}")
-        m2.metric("💰 Costo Total", f"S/ {ag['costo_total']:.2f}")
-        m3.metric("📍 Distancia Radial", f"{ag['distancia_total_km']:.1f} km")
+        m1.metric("Destinos (K)", f"{resultado['k']}")
+        m2.metric("Costo total", f"S/ {ag['costo_total']:.2f}")
+        m3.metric("Distancia radial", f"{ag['distancia_total_km']:.1f} km")
         score_promedio = sum(resultado['scores_difusos'].get(did, 5.0) for did in ag['ruta_ids']) / max(1, len(ag['ruta_ids']))
-        m4.metric("⭐ Score Difuso Prom.", f"{score_promedio:.2f} / 10")
+        m4.metric("Score difuso prom.", f"{score_promedio:.2f} / 10")
 
         # 2. Secuencia de Visita con Badges Visuales
-        st.write("**Secuencia Recomendada de Excursiones:**")
+        st.write("**Secuencia recomendada de excursiones:**")
         cols_badges = st.columns(min(6, len(ag['ruta_ids'])))
         for idx, did in enumerate(ag['ruta_ids']):
             with cols_badges[idx % len(cols_badges)]:
                 st.success(f"**Día {idx+1}**\n\n{destinos_dict[did]['nombre']}")
 
         nb = st.session_state.nodo_base
-        st.caption(f"📍 **Alojamiento (Nodo Base $d_0$):** Latitud {nb['lat']}, Longitud {nb['lon']}")
+        st.caption(f"**Alojamiento (Nodo Base $d_0$):** Latitud {nb['lat']}, Longitud {nb['lon']}")
 
         st.markdown("<br/>", unsafe_allow_html=True)
 
         # 3. Pestañas de Detalles e Investigación Académica
-        tabs = st.tabs(["📜 Itinerario Narrativo", "🚌 Guía de Accesos", "🚗 Desplazamiento Radial", "⭐ Scores Difusos", "🧬 Métricas del AG"])
+        tabs = st.tabs(["Itinerario", "Guía de accesos", "Desplazamiento radial", "Scores difusos", "Métricas del AG"])
 
         with tabs[0]:
             st.markdown(resultado['itinerario'])
@@ -264,7 +264,7 @@ def main():
             st.write("### Instrucciones de Transporte Público")
             for did in ag['ruta_ids']:
                 guia = obtener_guia_acceso(did)
-                with st.expander(f"🚌 {guia['nombre']} (~{guia['tiempo_total_min']} min, S/{guia['costo_total_soles']})"):
+                with st.expander(f"{guia['nombre']} (~{guia['tiempo_total_min']} min, S/{guia['costo_total_soles']})"):
                     st.write(f"**Punto de inicio:** {guia['punto_partida_recomendado']}")
                     st.write(f"**Transporte:** {guia['medio_transporte']}")
                     for paso in guia['pasos']:
@@ -297,8 +297,8 @@ def main():
                 st.code(ag["grafica_ascii"], language="text")
 
     else:
-        st.info("👈 Configura tus preferencias en la barra lateral y presiona **🚀 Generar Ruta Óptima** para calcular tu itinerario personalizado.")
-        st.write("### 🏔️ Catálogo Oficial de las 15 Lomas de Lima:")
+        st.info("Configura tus preferencias en la barra lateral y presiona **Generar ruta óptima** para calcular tu itinerario.")
+        st.write("### Catálogo de las 15 Lomas de Lima:")
         destinos_tabla = [
             {"ID": d['id'], "Nombre": d['nombre'], "Distrito": d['distrito'], "Dificultad": d['dificultad'], "Costo": f"S/{d['costo_estimado']}"}
             for d in destinos
