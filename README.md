@@ -146,11 +146,15 @@ Se detalla en la sección 6.
 
 ### 3.4 Módulo 3: Razonamiento bajo Incertidumbre (Lógica Difusa)
 
-**Función**: Cuantifica de forma continua el nivel de recomendación de cada loma ($S_{\text{difuso}} \in [0, 10]$), combinando **4 variables cualitativas de verdadera incertidumbre** (Saturación Turística, Seguridad Percibida, Estado Ecosistémico/Clima y Accesibilidad Cualitativa) mediante un sistema de inferencia Mamdani. 
+**Función**: El módulo de lógica difusa integra **dos sistemas de inferencia Mamdani** que se acoplan directamente al Algoritmo Genético:
 
-Esto permite al sistema razonar sobre factores dinámicos, subjetivos o imprecisos de Lima. Por diseño arquitectónico y para evitar la explosión combinatoria ($3^4 = 81$ reglas vs. $3^9 = 19,683$), las variables deterministas como **Costo** (Soles) y **Distancia de Desplazamiento Radial** ($d_0 \to d_j$ en km) se delegan al Algoritmo Genético como funciones de costo real y restricciones duras ($\Omega_{\text{presupuesto}}$, $\Omega_{\text{tiempo}}$), garantizando una estricta y limpia separación de responsabilidades.
+1. **Sistema de Nivel de Riesgo** (en la función fitness): Evalúa el riesgo operacional de cada loma mediante **3 variables de incertidumbre** (Saturación Turística, Seguridad Percibida y Accesibilidad Cualitativa), produciendo un $\text{nivel\_riesgo} \in [0, 10]$ que penaliza la aptitud de las rutas con destinos riesgosos.
 
-Se detalla en la sección 5.
+2. **Sistema de Nivel de Exigencia de Exploración** (en la cadena genética): Evalúa qué tan intensiva es la exploración del turista mediante **3 variables codificadas como genes reales** dentro del cromosoma (Horas de Recorrido, Cobertura de Zona y Extensión del Circuito), produciendo un $\text{nivel\_exigencia} \in [0, 1]$ que bonifica y modula la tolerancia al riesgo.
+
+Las variables deterministas como **Costo** (Soles) y **Distancia de Desplazamiento Radial** ($d_0 \to d_j$ en km) se delegan al Algoritmo Genético como funciones de costo real y restricciones duras ($\Omega_{\text{presupuesto}}$, $\Omega_{\text{tiempo}}$), garantizando una estricta separación de responsabilidades.
+
+Se detalla en la sección 5 y en el documento complementario [`docs/integrar_difuso.md`](docs/integrar_difuso.md).
 
 ### 3.5 Flujo End-to-End del Sistema
 
@@ -263,127 +267,128 @@ El ACR Sistema de Lomas de Lima (creado en 2019, meta 2042) abarca las lomas de 
 
 ---
 
-## 5. Lógica Difusa (Razonamiento bajo Incertidumbre)
+### 5. Lógica Difusa (Razonamiento bajo Incertidumbre)
 
 ### 5.1 Descripción del Sistema y Justificación Arquitectónica
 
-Se utiliza un **sistema de inferencia difusa tipo Mamdani** que toma **4 variables de entrada lingüísticas** representativas de verdadera incertidumbre y produce un **Score de Recomendación Turística** $S_{\text{difuso}} \in [0, 10]$ para cada destino. 
+El módulo de lógica difusa implementa **dos sistemas de inferencia Mamdani** integrados directamente en el Algoritmo Genético, siguiendo las indicaciones del docente de incorporar un componente de lógica difusa en la **cadena genética** y otro en la **función fitness**:
 
-> **Decisión de Diseño Crítica (Reducción de 9 a 4 variables):**
-> Inicialmente se consideró un esquema de 9 variables. No obstante, por fundamentos de ingeniería de software e inteligencia artificial:
->
-> 1. **Evitar la "Maldición de la Dimensionalidad":** Un sistema de 9 variables con 3 términos cada una requiere un espacio combinatorial de $3^9 = 19,683$ reglas. Con pocas reglas, el 99% del espacio queda sin activación, provocando que la defuzzificación en `scikit-fuzzy` falle (arrojando errores `NaN` o valores planos de 0). Con **4 variables**, el espacio máximo es de $3^4 = 81$ combinaciones, lo cual permite una cobertura completa, robusta y matemáticamente verificable con un conjunto manejable de 20 reglas.
-> 2. **Estricta Separación de Responsabilidades:** La Lógica Difusa se reserva para información cualitativa, subjetiva o incierta (percepción de seguridad, verdor estacional, saturación, dificultad del sendero). Las variables deterministas exactas (**Costo en Soles** y **Distancia en km**) pertenecen al **Algoritmo Genético**, que las optimiza como funciones de costo físico y restricciones duras cuadráticas ($\Omega_{\text{presupuesto}}$, $\Omega_{\text{tiempo}}$), evitando la doble penalización.
+| Sistema Difuso | Ubicación en el AG | Variables de Entrada | Variable de Salida | Propósito |
+|:---------------|:-------------------|:---------------------|:-------------------|:----------|
+| **Nivel de Riesgo** | Función Fitness | Saturación, Seguridad, Accesibilidad (3 vars) | `nivel_riesgo` ∈ [0, 10] | Penalizar lomas riesgosas |
+| **Nivel de Exigencia** | Cadena Genética (cromosoma) | Horas, Cobertura, Extensión (3 vars) | `nivel_exigencia` ∈ [0, 1] | Modelar intensidad de exploración |
 
-### 5.2 Las 4 Variables de Entrada Difusas (Verdadera Incertidumbre)
+> **Decisión de Diseño — Cambio de "calidad" a "riesgo":**
+> Se reemplazó el sistema de "calidad de las lomas" (variable de salida `recomendacion`) por un sistema de **"nivel de riesgo de las lomas"** (variable de salida `nivel_riesgo`), siguiendo la observación del docente de que el concepto de riesgo es más utilizado en la literatura de optimización de rutas. La variable de **clima/verdor** se eliminó del sistema difuso porque no tiene relación directa con el concepto de riesgo operacional; el clima se reserva para información complementaria del itinerario LLM.
 
-Cada variable se define con su dominio numérico, términos lingüísticos y justificación:
+### 5.2 Sistema Difuso 1: Nivel de Riesgo de las Lomas (Función Fitness)
+
+Este sistema evalúa el riesgo operacional de cada loma del catálogo. Un score de riesgo **alto** implica que la loma es más riesgosa y por tanto será **penalizada** en la función fitness (el AG tenderá a evitarla).
 
 #### V1: Saturación Turística
 
 - **Qué mide**: Nivel de afluencia turística concurrente del destino.
-- **Universo de discurso**: Escala normalizada $[0.0, 1.0]$ (0 = vacío/desconocido, 1 = saturación máxima).
+- **Universo de discurso**: Escala normalizada $[0.0, 1.0]$ (0 = vacío, 1 = saturación máxima).
 - **Términos lingüísticos**:
-  - `Baja`: $[0.0, 0.4]$ — Lomas poco concurridas (Paríso, Primavera, Manchay).
+  - `Baja`: $[0.0, 0.4]$ — Lomas poco concurridas (Paraíso, Primavera, Manchay).
   - `Media`: $[0.3, 0.7]$ — Concurrencia habitual (Amancaes, Lúcumo).
-  - `Alta`: $[0.6, 1.0]$ — Destinos urbanos o reservas masivas (Morro Solar, Lachay, Huaca Pucllana).
-- **Por qué es relevante**: Representa el **eje central del proyecto**: desconcentrar el turismo hacia lomas menos visitadas, premiando con mayor puntaje a los destinos con baja saturación para fomentar el ecoturismo sostenible.
-- **Fuente de datos**: Estadísticas de visitas del GRML y reportes de comités locales ecoturísticos.
+  - `Alta`: $[0.6, 1.0]$ — Destinos urbanos o reservas masivas (Morro Solar, Huaca Pucllana).
+- **Relación con riesgo**: Alta saturación → **mayor riesgo** de deterioro ecológico, incidentes en senderos congestionados y dificultad de evacuación. Este eje es central al problema de la saturación turística de las lomas de Lima.
 
 #### V2: Seguridad Percibida
 
 - **Qué mide**: Percepción cualitativa de seguridad ciudadana en el entorno de la loma y sus accesos.
 - **Universo de discurso**: Escala $[0, 10]$ (0 = muy riesgoso, 10 = muy seguro).
 - **Términos lingüísticos**:
-  - `Riesgoso`: $[0, 4]$ — Zonas periféricas con baja presencia policial o antecedentes de incidentes.
+  - `Riesgoso`: $[0, 4]$ — Zonas periféricas con baja presencia policial.
   - `Moderado`: $[3, 7]$ — Zonas con vigilancia vecinal o acceso semiregulado.
-  - `Seguro`: $[6, 10]$ — Circuitos cerrados, áreas de conservación con personal o alta seguridad.
-- **Por qué es relevante**: La seguridad es una **prioridad absoluta** para el turista. Si una loma presenta alta incertidumbre o riesgo percibido, su recomendación debe decaer drásticamente con independencia de su belleza paisajística.
-- **Fuente de datos**: Informes del INEI sobre seguridad distrital, observatorios ciudadanos y retroalimentación de visitantes.
+  - `Seguro`: $[6, 10]$ — Circuitos cerrados, áreas de conservación con personal.
+- **Relación con riesgo**: Baja seguridad → **mayor riesgo** de incidentes para el turista.
 
-#### V3: Estado Ecosistémico / Clima-Verdor
+#### V3: Accesibilidad Cualitativa
 
-- **Qué mide**: Calidad del ecosistema según las condiciones de niebla (*garúa*) y verdor estacional.
-- **Universo de discurso**: Escala $[0, 10]$ (0 = desértico/seco, 10 = verdor óptimo con colchón de nubes).
+- **Qué mide**: Grado de facilidad o complejidad para acceder al inicio del sendero.
+- **Universo de discurso**: Escala $[0, 10]$ (0 = muy complejo, 10 = acceso directo).
 - **Términos lingüísticos**:
-  - `Seco`: $[0, 4]$ — Fuera de temporada (noviembre a mayo); paisaje árido con escasa vegetación activa.
-  - `Favorable`: $[3, 7]$ — Clima nublado o inicio/fin de temporada; verdor intermedio.
-  - `Óptimo_Garúa`: $[6, 10]$ — Temporada alta de lomas (junio a octubre); flor de amancaes en floración, vegetación exuberante y niebla densa.
-- **Por qué es relevante**: Las lomas son un ecosistema estacional dinámico. El principal valor turístico radica en encontrarlas en su máximo esplendor biológico.
-- **Fuente de datos**: Reportes meteorológicos de SENAMHI y estado fenológico de la vegetación (SERFOR / Red de Lomas).
-
-#### V4: Accesibilidad Cualitativa
-
-- **Qué mide**: Grado de facilidad o complejidad para acceder al inicio del sendero (calidad del camino y conexiones).
-- **Universo de discurso**: Escala $[0, 10]$ (0 = muy complejo/trocha agreste, 10 = acceso directo pavimentado).
-- **Términos lingüísticos**:
-  - `Difícil`: $[0, 4]$ — Múltiples trasbordos informales, trochas no señalizadas o caminata prolongada previa.
+  - `Difícil`: $[0, 4]$ — Múltiples trasbordos informales, trochas no señalizadas.
   - `Media`: $[3, 7]$ — Conexión mediante bus o combi y senderos moderadamente señalizados.
-  - `Fácil`: $[6, 10]$ — Acceso directo vía Metro Línea 1, Corredores Complementarios o vía asfaltada con señalética oficial.
-- **Por qué es relevante**: El acceso es un factor habilitante clave. Destinos hermosos pero excesivamente inaccesibles o con riesgo de extravío pierden viabilidad para el turista promedio.
-- **Fuente de datos**: Aplicativos de transporte público (TuRuta, Rumbo), guías del ACR Lomas de Lima y mapeo OSM.
+  - `Fácil`: $[6, 10]$ — Acceso directo vía Metro Línea 1, Corredores Complementarios.
+- **Relación con riesgo**: Baja accesibilidad → **mayor riesgo** de accidentes en el trayecto.
+
+#### Salida: Nivel de Riesgo
+
+- **Variable de salida**: $\text{nivel\_riesgo} \in [0, 10]$.
+  - Conjuntos: `Muy_Bajo` $[0, 2.5]$, `Bajo` $[2, 4.5]$, `Medio` $[4, 7]$, `Alto` $[6.5, 9]$, `Muy_Alto` $[8, 10]$.
+- **Método de defuzzificación**: Centroide (Center of Gravity).
+- **Semántica invertida**: A diferencia del antiguo sistema de "calidad" donde un score alto era deseable, aquí un **score alto significa mayor riesgo** y se **resta** del fitness.
 
 ---
 
-### 5.3 Reubicación de las Otras 5 Variables Fuera del Módulo Difuso
+### 5.3 Sistema Difuso 2: Nivel de Exigencia de Exploración (Cadena Genética)
 
-Para asegurar claridad absoluta en el equipo y ante la sustentación académica, las variables restantes se administran en los componentes computacionales correspondientes:
+Este sistema modela la intensidad de la exploración del turista. Sus 3 variables de entrada están **codificadas como genes reales** dentro del cromosoma del AG (genes 15, 16 y 17), lo que permite que el AG evolucione no solo qué lomas visitar y en qué orden, sino también con qué nivel de exigencia explorarlas.
 
-1. **Costo (S/):** Al **Algoritmo Genético**. Se calcula sumando entradas y pasajes reales, evaluado en la restricción dura cuadrática $\Omega_{\text{presupuesto}} = \max(0, \text{CostoTotal} - \text{Presupuesto})^2$.
-2. **Distancia / Desplazamiento (km):** Al **Algoritmo Genético**. Se computa la distancia geográfica real (fórmula Haversine) entre lomas consecutivas para minimizar traslados innecesarios.
-3. **Pendiente / Dificultad Física:** Al **Módulo LLM / Perfil del Usuario**. El LLM extrae si el usuario es principiante, intermedio o avanzado, aplicando un filtro de pre-selección sobre los senderos viables.
-4. **Biodiversidad:** Al **Módulo LLM / Afinidades**. Se utiliza en el prompt de recomendación e itinerario como un factor de emparejamiento con los gustos del turista (ej. avistamiento de aves, botánica).
-5. **Impacto Ambiental:** Integrado dentro de la variable de **Saturación Turística**, ya que el impacto ecológico negativo en las lomas es función directa de la sobrecarga de visitantes sobre la capacidad de carga del ecosistema.
+#### E1: Horas de Recorrido
+
+- **Qué mide**: Tiempo dedicado a explorar la zona.
+- **Universo de discurso**: $[1, 6]$ horas (basado en datos reales del catálogo: mínimo 2.0h, máximo 6.0h, promedio 3.5h).
+- **Términos lingüísticos**: `Corto` $[1, 3]$, `Moderado` $[2, 5]$, `Extenso` $[4, 6]$.
+
+#### E2: Cobertura de Zona
+
+- **Qué mide**: Porcentaje de la zona que se cubrirá.
+- **Universo de discurso**: $[0.0, 1.0]$ (0.25 = un mirador, 0.5 = circuito corto, 1.0 = cobertura total).
+- **Términos lingüísticos**: `Parcial` $[0, 0.35]$, `Intermedia` $[0.25, 0.75]$, `Completa` $[0.6, 1.0]$.
+
+#### E3: Extensión del Circuito
+
+- **Qué mide**: Longitud del circuito de senderismo.
+- **Universo de discurso**: $[1, 10]$ km (basado en datos reales: Lúcumo circuito largo 7 km, Paraíso ~2.6 km, Lachay 5 km).
+- **Términos lingüísticos**: `Corto` $[1, 4.5]$, `Medio` $[3, 8]$, `Largo` $[6.5, 10]$.
+
+#### Salida: Nivel de Exigencia
+
+- **Variable de salida**: $\text{nivel\_exigencia} \in [0.0, 1.0]$.
+  - Conjuntos: `Relajado` $[0, 0.35]$, `Moderado` $[0.25, 0.75]$, `Intenso` $[0.65, 1.0]$.
+- **Método de defuzzificación**: Centroide.
+- **Rol en el fitness**: El nivel de exigencia bonifica la aptitud del individuo y modula su tolerancia al riesgo (un turista más exigente acepta lomas con mayor riesgo a cambio de una exploración más profunda).
+
+La documentación técnica completa de ambos sistemas difusos, con diagramas, reglas y ejemplos paso a paso, se encuentra en [`docs/integrar_difuso.md`](docs/integrar_difuso.md).
 
 ---
 
-### 5.4 Base de Reglas de Inferencia Mamdani (20 Reglas Robustas)
+### 5.4 Base de Reglas del Sistema de Riesgo (~16 Reglas)
 
-El motor de inferencia evalúa el conjunto de reglas tipo:  
-`SI (Saturación es ...) Y (Seguridad es ...) Y (Clima es ...) Y (Accesibilidad es ...) ENTONCES (Recomendación es ...)`
-
-Las reglas están calibradas para garantizar que ningún caso real quede sin evaluación:
+El motor de inferencia evalúa reglas con la lógica **invertida** respecto al antiguo sistema de calidad:
+`SI (Saturación es ...) Y (Seguridad es ...) Y (Accesibilidad es ...) ENTONCES (Riesgo es ...)`
 
 ```text
--- CASOS EXCEPCIONALES: MÁXIMA RECOMENDACIÓN (Muy_Alta: [8.0 - 10.0])
-R01: SI Saturacion=Baja Y Seguridad=Seguro Y Clima=Optimo_Garua Y Accesibilidad=Facil     ENTONCES Recomendacion=Muy_Alta
-R02: SI Saturacion=Baja Y Seguridad=Seguro Y Clima=Optimo_Garua Y Accesibilidad=Media     ENTONCES Recomendacion=Muy_Alta
-R03: SI Saturacion=Baja Y Seguridad=Moderado Y Clima=Optimo_Garua Y Accesibilidad=Facil   ENTONCES Recomendacion=Muy_Alta
-R04: SI Saturacion=Media Y Seguridad=Seguro Y Clima=Optimo_Garua Y Accesibilidad=Facil    ENTONCES Recomendacion=Muy_Alta
+-- RIESGO MUY ALTO (condiciones críticas)
+R01: SI Seguridad=Riesgoso Y Accesibilidad=Dificil                            ENTONCES Riesgo=Muy_Alto
+R02: SI Saturacion=Alta Y Seguridad=Riesgoso                                  ENTONCES Riesgo=Muy_Alto
 
--- CASOS FAVORABLES: ALTA RECOMENDACIÓN (Alta: [6.5 - 8.5])
-R05: SI Saturacion=Baja Y Seguridad=Seguro Y Clima=Favorable Y Accesibilidad=Facil        ENTONCES Recomendacion=Alta
-R06: SI Saturacion=Baja Y Seguridad=Moderado Y Clima=Favorable Y Accesibilidad=Media      ENTONCES Recomendacion=Alta
-R07: SI Saturacion=Baja Y Seguridad=Seguro Y Clima=Optimo_Garua Y Accesibilidad=Dificil   ENTONCES Recomendacion=Alta
-R08: SI Saturacion=Media Y Seguridad=Seguro Y Clima=Optimo_Garua Y Accesibilidad=Media    ENTONCES Recomendacion=Alta
-R09: SI Saturacion=Media Y Seguridad=Moderado Y Clima=Optimo_Garua Y Accesibilidad=Facil  ENTONCES Recomendacion=Alta
+-- RIESGO ALTO (condiciones desfavorables)
+R03: SI Saturacion=Alta Y Seguridad=Moderado Y Accesibilidad=Media            ENTONCES Riesgo=Alto
+R04: SI Saturacion=Media Y Seguridad=Riesgoso Y Accesibilidad=Media           ENTONCES Riesgo=Alto
+R05: SI Saturacion=Alta Y Seguridad=Moderado Y Accesibilidad=Dificil          ENTONCES Riesgo=Alto
+R06: SI Saturacion=Media Y Seguridad=Riesgoso Y Accesibilidad=Dificil         ENTONCES Riesgo=Alto
 
--- CASOS PROMEDIO: RECOMENDACIÓN MEDIA (Media: [4.5 - 6.5])
-R10: SI Saturacion=Media Y Seguridad=Moderado Y Clima=Favorable Y Accesibilidad=Media     ENTONCES Recomendacion=Media
-R11: SI Saturacion=Baja Y Seguridad=Moderado Y Clima=Seco Y Accesibilidad=Facil          ENTONCES Recomendacion=Media
-R12: SI Saturacion=Alta Y Seguridad=Seguro Y Clima=Optimo_Garua Y Accesibilidad=Facil     ENTONCES Recomendacion=Media
-R13: SI Saturacion=Media Y Seguridad=Seguro Y Clima=Seco Y Accesibilidad=Media           ENTONCES Recomendacion=Media
-R14: SI Saturacion=Baja Y Seguridad=Riesgoso Y Clima=Optimo_Garua Y Accesibilidad=Facil   ENTONCES Recomendacion=Media
+-- RIESGO MEDIO (condiciones mixtas)
+R07: SI Saturacion=Media Y Seguridad=Moderado Y Accesibilidad=Media           ENTONCES Riesgo=Medio
+R08: SI Saturacion=Alta Y Seguridad=Seguro Y Accesibilidad=Facil              ENTONCES Riesgo=Medio
+R09: SI Saturacion=Media Y Seguridad=Seguro Y Accesibilidad=Dificil           ENTONCES Riesgo=Medio
+R10: SI Saturacion=Baja Y Seguridad=Riesgoso Y Accesibilidad=Facil            ENTONCES Riesgo=Medio
 
--- CASOS DESFAVORABLES: BAJA RECOMENDACIÓN (Baja: [2.5 - 4.5])
-R15: SI Saturacion=Alta Y Seguridad=Moderado Y Clima=Favorable Y Accesibilidad=Media     ENTONCES Recomendacion=Baja
-R16: SI Saturacion=Media Y Seguridad=Riesgoso Y Clima=Favorable Y Accesibilidad=Media     ENTONCES Recomendacion=Baja
-R17: SI Saturacion=Baja Y Seguridad=Moderado Y Clima=Seco Y Accesibilidad=Dificil        ENTONCES Recomendacion=Baja
-R18: SI Saturacion=Alta Y Seguridad=Seguro Y Clima=Seco Y Accesibilidad=Dificil          ENTONCES Recomendacion=Baja
+-- RIESGO BAJO (condiciones favorables)
+R11: SI Saturacion=Baja Y Seguridad=Moderado Y Accesibilidad=Facil            ENTONCES Riesgo=Bajo
+R12: SI Saturacion=Baja Y Seguridad=Seguro Y Accesibilidad=Media              ENTONCES Riesgo=Bajo
+R13: SI Saturacion=Baja Y Seguridad=Moderado Y Accesibilidad=Media            ENTONCES Riesgo=Bajo
+R14: SI Saturacion=Media Y Seguridad=Seguro Y Accesibilidad=Facil             ENTONCES Riesgo=Bajo
 
--- CASOS CRÍTICOS / INVIABLES: MUY BAJA RECOMENDACIÓN (Muy_Baja: [0.0 - 2.5])
-R19: SI Seguridad=Riesgoso Y Accesibilidad=Dificil                                       ENTONCES Recomendacion=Muy_Baja
-R20: SI Saturacion=Alta Y Seguridad=Riesgoso Y Clima=Seco                                ENTONCES Recomendacion=Muy_Baja
+-- RIESGO MUY BAJO (condiciones óptimas)
+R15: SI Saturacion=Baja Y Seguridad=Seguro Y Accesibilidad=Facil              ENTONCES Riesgo=Muy_Bajo
+R16: SI Saturacion=Baja Y Seguridad=Seguro Y Accesibilidad=Dificil            ENTONCES Riesgo=Muy_Bajo
 ```
-
----
-
-### 5.5 Salida Difusificada y Defuzzificación
-
-- **Variable de salida**: **Score de Recomendación Turística (**$S_{\text{difuso}} \in [0, 10]$**)**.
-  - Conjuntos de salida: `Muy_Baja` $[0, 2.5]$, `Baja` $[2, 4.5]$, `Media` $[4, 7]$, `Alta` $[6.5, 9]$, `Muy_Alta` $[8, 10]$.
-- **Método de Defuzzificación**: **Centroide** (Center of Gravity, CoG). Produce un valor escalar continuo entre $0.0$ y $10.0$ que cuantifica con precisión el grado de conveniencia de cada destino turístico.
-- **Rol en el Flujo General**: Este valor continuo $S_{\text{difuso}}(d)$ se calcula previamente para cada una de las 15 lomas y alimenta directamente la función de evaluación (fitness) del Algoritmo Genético.
 
 ---
 
@@ -403,41 +408,50 @@ Es la unidad mínima de información dentro de la solución:
 | **Fenotipo** | Rasgo visible manifestado | Destino turístico real que se visita | Lomas del Paraíso (Villa María del Triunfo) |
 | **Interpretación** | Información de un rasgo biológico | Instrucción operativa de viaje | *"El primer día del itinerario se visita Lomas del Paraíso"* |
 
-#### B. El Cromosoma (Cromosoma de Longitud Completa $N=15$ con Ventana Activa $K$)
-El genotipo se define como una **permutación fija de los 15 alelos del catálogo ($N=15$)**, organizada bajo una **representación basada en prefijos (Prefix-based Representation)** en dos bloques:
-1. **Ventana Activa ($K$ lomas titulares / Fenotipo Evaluado):** Las primeras $K$ lomas que el turista **realmente va a recorrer**.
-2. **Reserva Durmiente ($15 - K$ lomas suplentes / Intrones):** Lomas en lista de espera que no se visitan en este momento, pero permanecen en el genotipo para mantener la permutación completa.
+#### B. El Cromosoma Híbrido (Permutación $N=15$ + 3 Genes Reales de Exigencia)
+El genotipo se define como un **cromosoma híbrido de 18 genes** que combina:
+1. **Permutación de lomas (genes 0-14):** Los 15 alelos del catálogo organizados bajo la representación basada en prefijos.
+   - **Ventana Activa ($K$ lomas titulares):** Las primeras $K$ lomas que el turista va a recorrer.
+   - **Reserva Durmiente ($15 - K$ suplentes):** Lomas en lista de espera.
+2. **Genes reales de exigencia (genes 15-17):** 3 valores de punto flotante que codifican las variables de entrada del sistema difuso de **Nivel de Exigencia de Exploración**:
+   - Gen 15: `horas_recorrido` ∈ [1.0, 6.0]
+   - Gen 16: `cobertura_zona` ∈ [0.0, 1.0]
+   - Gen 17: `extension_circuito` ∈ [1.0, 10.0] km
 
-> **Garantía de Validez Matemática del Crossover (OX):** Al mantener el genotipo como una permutación fija de longitud $N=15$, se garantiza la validez matemática del operador **Order Crossover (OX)**, eliminando completamente el riesgo de alelos duplicados o faltantes entre subconjuntos disjuntos durante las operaciones de recombinación.
+> **Garantía de Validez Matemática del Crossover:** La parte de permutación (genes 0-14) se cruza con **Order Crossover (OX)** estándar. Los genes reales (15-17) se cruzan con **BLX-α** (blend crossover). Esta separación garantiza que ambos segmentos del cromosoma mantengan su validez semántica.
 
-**Ejemplo de Cromosoma para un viaje de 3 días ($K = 3$):**
+**Ejemplo de Cromosoma Híbrido para un viaje de 3 días ($K = 3$):**
 
-| Posición (Locus) | Código (Alelo) | Nombre de la Loma | Distrito | Rol en el Cromosoma | ¿El turista lo visita? |
+| Posición (Locus) | Código (Alelo) | Nombre / Descripción | Tipo de Gen | Rol en el Cromosoma | ¿Evaluado? |
 | :---: | :---: | :--- | :--- | :--- | :---: |
-| **0** | `L0` | Lomas del Paraíso (+ Apu Siqay) | Villa María del Triunfo | **Día 1 (Titular - Fenotipo)** | **Sí** |
-| **1** | `L3` | Lomas de Manchay | Ate | **Día 2 (Titular - Fenotipo)** | **Sí** |
-| **2** | `L4` | Lomas de Mangomarca | San Juan de Lurigancho | **Día 3 (Titular - Fenotipo)** | **Sí** |
-| **3** | `L7` | Lomas de Lúcumo | Pachacámac | Suplente 1 (Reserva inactiva) | No |
-| **4** | `L1` | Lomas de Carabayllo 2 | Carabayllo | Suplente 2 (Reserva inactiva) | No |
-| **5** | `L5` | Lomas de Amancaes | Rímac | Suplente 3 (Reserva inactiva) | No |
+| **0** | `L0` | Lomas del Paraíso (+ Apu Siqay) | Discreto | **Día 1 (Titular)** | **Sí** |
+| **1** | `L3` | Lomas de Manchay | Discreto | **Día 2 (Titular)** | **Sí** |
+| **2** | `L4` | Lomas de Mangomarca | Discreto | **Día 3 (Titular)** | **Sí** |
+| **3** | `L7` | Lomas de Lúcumo | Discreto | Suplente 1 (Reserva) | No |
 | **...** | ... | ... | ... | ... | No |
-| **14** | `L14` | La Loma Amarilla | Santiago de Surco | Suplente 12 (Reserva inactiva) | No |
+| **14** | `L14` | La Loma Amarilla | Discreto | Suplente 12 (Reserva) | No |
+| **15** | `4.2` | Horas de recorrido | **Real [1, 6]** | **Gen de Exigencia** | **Sí** |
+| **16** | `0.65` | Cobertura de zona | **Real [0, 1]** | **Gen de Exigencia** | **Sí** |
+| **17** | `6.8` | Extensión del circuito (km) | **Real [1, 10]** | **Gen de Exigencia** | **Sí** |
 
 ```mermaid
 flowchart LR
-    subgraph Genotipo["Genotipo: Permutacion Completa N = 15 (OX seguro)"]
+    subgraph Genotipo["Cromosoma Hibrido (18 genes)"]
         direction LR
-        subgraph Activos["Ventana Activa (Fenotipo Evaluado: K genes)"]
+        subgraph Activos["Ventana Activa (K genes)"]
             G1["Locus 0: L0"] --- G2["Locus 1: L3"] --- G3["Locus 2: L4"]
         end
-        subgraph Reserva["Reserva Genetica (Intrones: N - K genes)"]
+        subgraph Reserva["Reserva Genetica (N-K genes)"]
             G4["Locus 3: L7"] --- G5["Locus 4: L1"] --- G6["...: L14"]
         end
-        Activos --- Reserva
+        subgraph Exigencia["Genes de Exigencia (3 reales)"]
+            G7["Gen 15: horas=4.2"] --- G8["Gen 16: cob=0.65"] --- G9["Gen 17: ext=6.8"]
+        end
+        Activos --- Reserva --- Exigencia
     end
 ```
 
-*Conclusión del Cromosoma:* La ruta evaluada fenotípicamente para el turista es únicamente `L0 -> L3 -> L4`. Las demás 12 lomas no generan costo ni distancia, pero garantizan que el operador de cruce OX opere sobre una permutación completa válida sin huecos ni duplicados.
+*Conclusión del Cromosoma Híbrido:* El AG optimiza simultáneamente **qué lomas visitar** (permutación), **en qué orden** (posición en ventana K) y **con qué nivel de exigencia explorarlas** (genes reales → sistema difuso Mamdani → `nivel_exigencia`).
 
 #### C. La Población (Los 40 Planes de Viaje Compitiendo)
 La población es el conjunto de **40 itinerarios alternativos** generados al inicio de forma aleatoria:
@@ -460,82 +474,98 @@ La población es el conjunto de **40 itinerarios alternativos** generados al ini
 
 ---
 
-### 6.3 La Función Fitness (Aptitud) con Costo Radial y Escalado Adimensional Relativo
+### 6.3 La Función Fitness (Aptitud) con Riesgo Difuso, Exigencia y Escalado Relativo
 
 Antes de cualquier fórmula matemática, el fitness representa la **calificación general del viaje** según la siguiente regla en palabras:
 
 $$
-\mathbf{Nota\ del\ Viaje\ (Fitness)} = (\text{Belleza\ y\ Calidad\ de\ las\ Lomas}) - (\text{Costo\ de\ Desplazamiento\ Radial}) - (\text{Multa\ Relativa\ de\ Presupuesto}) - (\text{Multa\ Relativa\ de\ Tiempo})
+\mathbf{Nota\ del\ Viaje\ (Fitness)} = (\text{Beneficio\ Base}) + (\text{Bonificación\ por\ Exigencia}) - (\text{Penalización\ por\ Riesgo}) - (\text{Costo\ de\ Desplazamiento}) - (\text{Multas\ de\ Presupuesto\ y\ Tiempo})
 $$
 
-#### A. Costo de Desplazamiento Radial ($d_0 \to d_j$)
-Se sustituyó la sumatoria de traslados inter-lomas por una métrica Haversine de **viajes radiales independientes desde el nodo base del usuario ($d_0$)** hacia cada loma $d_j$. Este ajuste modela la logística metropolitana real en Lima, considerando el retorno diario al alojamiento en lugar de travesías continuas cerradas.
+#### A. Integración de los 2 Componentes de Lógica Difusa
 
-#### B. Escalado Adimensional Relativo en Penalizaciones de Fitness
-Se reemplazaron las penalizaciones cuadráticas absolutas por **barreras relativas normalizadas $(\Delta / \text{Límite})^2$** para presupuesto y tiempo. Esto evita la distorsión de escala (*fitness scaling problem*), impidiendo que excesos monetarios o temporales marginales anulen la presión selectiva del beneficio difuso acumulado ($S_{\text{difuso}}$).
+- **Componente 1 (Cadena Genética):** Los genes reales del cromosoma (horas, cobertura, extensión) se procesan por el motor Mamdani de Exigencia para producir un `nivel_exigencia ∈ [0, 1]`. Este valor **bonifica** el fitness y **modula la tolerancia al riesgo**.
+- **Componente 2 (Función Fitness):** El `nivel_riesgo ∈ [0, 10]` de cada loma (calculado por el motor Mamdani de Riesgo a partir de saturación, seguridad y accesibilidad) **penaliza** el fitness acumulativamente.
+
+#### B. Costo de Desplazamiento Radial ($d_0 \to d_j$)
+Se utiliza la métrica Haversine de **viajes radiales independientes desde el nodo base del usuario ($d_0$)** hacia cada loma $d_j$, modelando el retorno diario al alojamiento.
+
+#### C. Escalado Adimensional Relativo en Penalizaciones
+Las penalizaciones de presupuesto y tiempo utilizan **barreras relativas normalizadas $(\Delta / \text{Límite})^2$** para evitar la distorsión de escala.
 
 #### Tabla de Criterios: ¿Qué suma puntos y qué resta puntos?
 
-| Criterio Evaluado | Efecto en la Nota | ¿Cómo se calcula en palabras? | Justificación Práctica |
+| Criterio Evaluado | Efecto | ¿Cómo se calcula? | Justificación |
 | :--- | :---: | :--- | :--- |
-| **Belleza y Calidad Ecoturística** | **Suma (+)** | Suma de los scores difusos ($S_{\text{difuso}} \in [0, 10]$) de las $K$ lomas titulares. | El turista busca lomas verdes, seguras y con senderos accesibles. |
-| **Costo de Desplazamiento Radial** | **Resta (-)** | Suma de distancias radiales Haversine desde el nodo base $d_0$ a cada loma $d_j$ activa, escalada por $\beta / 100$. | Refleja el traslado diario real ida y vuelta desde el alojamiento. |
-| **Multa Relativa de Presupuesto** | **Castiga (-)** | Barrera relativa cuadrática $\lambda_1 \cdot (\Delta_{\text{presupuesto}} / \text{Presupuesto})^2$. Si no se pasa, es $0.0$. | Normaliza el exceso monetario evitando distorsionar la escala frente al score difuso. |
-| **Multa Relativa de Tiempo** | **Castiga (-)** | Barrera relativa cuadrática $\lambda_2 \cdot (\Delta_{\text{tiempo}} / \text{TiempoDisponible})^2$. Si no se pasa, es $0.0$. | Evalúa las horas útiles diarias ($8\text{h}/\text{día}$) de forma adimensional y proporcional. |
+| **Beneficio Base de las Lomas** | **Suma (+)** | Puntaje intrínseco de cada loma basado en tipo, temporada y patrimonio. | El turista busca lomas atractivas con experiencias valiosas. |
+| **Bonificación por Exigencia** | **Suma (+)** | $\delta \times \text{nivel\_exigencia}$ del sistema difuso del cromosoma. | Premia exploración profunda; el AG evoluciona el estilo óptimo. |
+| **Penalización por Riesgo** | **Resta (-)** | $\gamma \times \Sigma\,\text{riesgo\_difuso}(d_j) \times \text{factor\_tolerancia}$. | Un turista exigente acepta más riesgo; uno relajado lo evita. |
+| **Costo de Desplazamiento Radial** | **Resta (-)** | $\beta \cdot (\text{Distancia} / 100)$ por Haversine desde $d_0$. | Refleja el traslado diario ida y vuelta desde el alojamiento. |
+| **Multa Relativa de Presupuesto** | **Castiga (-)** | $\lambda_1 \cdot (\Delta_{\text{presupuesto}} / \text{Presupuesto})^2$. | Normaliza el exceso monetario de forma adimensional. |
+| **Multa Relativa de Tiempo** | **Castiga (-)** | $\lambda_2 \cdot (\Delta_{\text{tiempo}} / \text{TiempoDisponible})^2$. | Evalúa las horas útiles diarias ($8\text{h}/\text{día}$). |
 
 #### Ejemplo Numérico Paso a Paso
 
-Supongamos que un usuario dispone de **S/ 60.00 de presupuesto** y **3 días** ($K=3$), alojado en el Centro de Lima ($d_0$).
+Supongamos un usuario con **S/ 60.00 de presupuesto**, **3 días** ($K=3$), cromosoma con genes reales `[horas=4.2, cob=0.65, ext=6.8]`.
 
-Evaluemos el **Plan 1** (`L0: Paraíso` $\to$ `L3: Manchay` $\to$ `L4: Mangomarca`):
+Evaluemos el **Plan 1** (`L4: Mangomarca` $\to$ `L3: Manchay` $\to$ `L0: Paraíso`):
 
-| Paso | Concepto Evaluado | Datos Reales de las Lomas | Cuenta en Palabras | Puntos Aportados |
-| :---: | :--- | :--- | :--- | :---: |
-| **1** | **Calidad de las Lomas** | Paraíso (8.5 pts) + Manchay (7.5 pts) + Mangomarca (8.0 pts) | Sumar las notas difusas de cada loma activa | **+24.00 pts** |
-| **2** | **Desplazamiento Radial desde $d_0$** | $d(d_0, L_0) = 18.5\text{ km} + d(d_0, L_3) = 14.0\text{ km} + d(d_0, L_4) = 9.5\text{ km} = 42.0\text{ km}$ | Restar $\beta \cdot (42.0 / 100.0)$ con $\beta = 1.0$ | **-0.42 pts** |
-| **3** | **Gasto del Viaje** | Entradas y pasajes: S/ 15 + S/ 10 + S/ 10 = S/ 35 | Costó S/ 35 vs Límite S/ 60 $\implies$ Exceso = S/ 0 $\implies$ Multa relativa = 0 | **-0.00 pts** (Sin multa) |
-| **4** | **Horas de Caminata** | Senderos: 4.5h + 3.5h + 4.0h = 12 horas totales | 12h caben en 3 días (24h útiles) $\implies$ Exceso = 0h $\implies$ Multa relativa = 0 | **-0.00 pts** (Sin multa) |
-| **FINAL** | **Calificación Total** | **Fitness = 24.00 - 0.42 - 0.00 - 0.00** | Nota global del itinerario | **23.58 puntos** |
+| Paso | Concepto Evaluado | Datos y Cálculo | Puntos |
+| :---: | :--- | :--- | :---: |
+| **1** | **Componente 1: Nivel de Exigencia** | Genes reales (4.2, 0.65, 6.8) → Motor Mamdani → `nivel_exigencia = 0.58` | — |
+| **2** | **Beneficio Base** | Mangomarca (7.0) + Manchay (6.5) + Paraíso (7.5) = 21.0 | **+21.00** |
+| **3** | **Bonificación Exigencia** | $\delta \times 0.58 = 2.0 \times 0.58$ | **+1.16** |
+| **4** | **Componente 2: Riesgo Difuso** | L4 riesgo=2.8 + L3 riesgo=3.5 + L0 riesgo=2.2 = 8.5 | — |
+| **5** | **Penalización Riesgo** | $\gamma \times (8.5/10) \times (1 - 0.58 \times 0.3) = 1.5 \times 0.85 \times 0.826$ | **-1.05** |
+| **6** | **Desplazamiento Radial** | 42.0 km total → $1.0 \times (42/100)$ | **-0.42** |
+| **7** | **Presupuesto** | S/ 35 ≤ S/ 60 → Sin exceso | **-0.00** |
+| **8** | **Tiempo** | 12h ≤ 24h útiles → Sin exceso | **-0.00** |
+| **FINAL** | **Fitness** | $21.00 + 1.16 - 1.05 - 0.42 - 0.00 - 0.00$ | **20.69** |
 
 #### Formulación Matemática Formal
 
 $$
-\boxed{F(x) = \sum_{j=1}^{K} S_{\text{difuso}}(d_j) \;-\; \beta \cdot \left( \frac{\sum_{j=1}^{K} \text{Haversine}(d_0, d_j)}{100} \right) \;-\; \lambda_1 \cdot \left(\frac{\Delta_{\text{presupuesto}}}{\text{Presupuesto}}\right)^2 \;-\; \lambda_2 \cdot \left(\frac{\Delta_{\text{tiempo}}}{\text{TiempoDisponible}}\right)^2 \;-\; \Omega_{\text{unicidad}}}
+\boxed{F(x) = \sum_{j=1}^{K} B(d_j) \;+\; \delta \cdot E_{\text{exig}} \;-\; \gamma \cdot \frac{\sum_{j=1}^{K} R_{\text{riesgo}}(d_j)}{10} \cdot (1 - E_{\text{exig}} \cdot 0.3) \;-\; \beta \cdot \frac{\text{Dist}(x)}{100} \;-\; \lambda_1 \cdot \left(\frac{\Delta_P}{P}\right)^2 \;-\; \lambda_2 \cdot \left(\frac{\Delta_T}{T}\right)^2 \;-\; \Omega_u}
 $$
 
 Donde:
-- $\text{Haversine}(d_0, d_j)$ es la distancia radial desde el nodo base del usuario ($d_0$) a la loma titular $d_j$.
-- $\Delta_{\text{presupuesto}} = \max(0,\; \text{CostoTotal}(x) - \text{Presupuesto})$ con $\lambda_1 = 25.0$.
-- $\Delta_{\text{tiempo}} = \max(0,\; \text{HorasTotales}(x) - \text{Días} \times 8.0)$ con $\lambda_2 = 25.0$.
-- $\Omega_{\text{unicidad}} = 1000 \cdot (K - |\text{set}(x_{1..K})|)$ como salvaguarda de unicidad en la ventana activa.
+- $B(d_j)$: Beneficio base intrínseco de la loma $d_j$.
+- $E_{\text{exig}} \in [0, 1]$: Nivel de exigencia difuso, obtenido del **Componente 1** (genes reales del cromosoma → Mamdani).
+- $R_{\text{riesgo}}(d_j) \in [0, 10]$: Nivel de riesgo difuso de la loma, obtenido del **Componente 2** (datos de la loma → Mamdani).
+- $\delta = 2.0$: Peso de bonificación por exigencia.
+- $\gamma = 1.5$: Peso de penalización por riesgo.
+- $\beta = 1.0$, $\lambda_1 = 25.0$, $\lambda_2 = 25.0$: Pesos de distancia, presupuesto y tiempo.
+- $\Omega_u = 1000 \cdot (K - |\text{set}(x_{1..K})|)$: Salvaguarda de unicidad.
 
 ---
 
 ### 6.4 Operadores Genéticos y Dinámica Evolutiva
 
-| Operador Genético | Analogía Biológica | Analogía en el Viaje Turístico | ¿Qué hace exactamente en el código? |
+| Operador Genético | Segmento | Analogía en el Viaje Turístico | ¿Qué hace exactamente? |
 | :--- | :--- | :--- | :--- |
-| **Selección por Torneo** | Supervivencia del más apto | Casting: 3 planes al azar compiten y clasifica el de mejor nota | Toma 3 cromosomas de la población y selecciona el de mayor fitness ($k_{\text{torneo}}=3$). |
-| **Cruce (Order Crossover, OX)** | Reproducción sexual | Fusión de ideas: combinar las mejores paradas de dos planes | Preserva el orden relativo sobre la permutación completa de $N=15$ alelos sin duplicados. |
-| **Mutación Swap (Reordenar)** | Mutación genética puntual | Cambiar el orden de dos días para optimizar logística | Intercambia dos posiciones dentro de la ventana activa (prob. 30%). |
-| **Mutación Reemplazo (Sustituir)** | Variación alélica | Cambio de jugador: sacar una loma cara y meter una suplente económica | Intercambia un gen activo con un gen de la reserva durmiente [K:15] (prob. 30%). |
-| **Mutación Inversión (2-Opt)** | Reordenamiento cromosómico | Desenredo de ruta: invertir un tramo dentro de la ventana activa | Invierte un subsegmento continuo dentro de la ventana activa (prob. 20%). |
-| **Elitismo** | Preservación del linaje campeón | El campeón clasifica directo a la final sin jugar eliminatorias | Copia los 2 mejores planes intactos a la siguiente generación ($E=2$). |
+| **Selección por Torneo** | Cromosoma completo | 3 planes compiten, clasifica el mejor | Selecciona el de mayor fitness ($k_{\text{torneo}}=3$). |
+| **Cruce OX (Order Crossover)** | Genes 0-14 (permutación) | Combinar las mejores paradas de dos planes | Preserva el orden relativo sobre $N=15$ alelos sin duplicados. |
+| **Cruce BLX-α (Blend Crossover)** | **Genes 15-17 (reales)** | Mezclar los estilos de exploración de dos planes | Para cada gen real, genera hijo en el rango $[\min(p_1, p_2) - \alpha d,\; \max(p_1, p_2) + \alpha d]$ con $\alpha=0.3$. |
+| **Mutación Swap (Reordenar)** | Genes 0-14 | Cambiar el orden de dos días | Intercambia dos posiciones dentro de la ventana activa (prob. 30%). |
+| **Mutación Reemplazo (Sustituir)** | Genes 0-14 | Sacar una loma y meter una suplente | Intercambia un gen activo con uno de la reserva $[K:15]$ (prob. 30%). |
+| **Mutación Inversión (2-Opt)** | Genes 0-14 | Invertir un tramo de la ruta | Invierte un subsegmento continuo dentro de la ventana activa (prob. 15%). |
+| **Mutación Gaussiana** | **Genes 15-17 (reales)** | **Ajustar ligeramente el estilo de exploración** | **Suma ruido $N(0, \sigma^2)$ a un gen real al azar, acotado al rango válido (prob. 25%).** |
+| **Elitismo** | Cromosoma completo | El campeón clasifica directo a la final | Copia los 2 mejores planes intactos a la siguiente generación ($E=2$). |
 
 
 **Representación visual de una generación:**
 
 ```mermaid
 flowchart TB
-    P["Poblacion 40 permutaciones N=15"] --> E["Evaluar Fitness F(x) sobre Ventana K<br/>(Distancia Radial + Barreras Relativas)"]
+    P["Poblacion 40 cromosomas hibridos (18 genes)"] --> E["Evaluar Fitness con Riesgo Difuso + Exigencia"]
     E --> S["Seleccion por Torneo k=3"]
-    S --> C["Crossover Order Crossover (OX) sobre N=15"]
-    C --> M["Mutaciones Compuestas (Swap / Reemplazo / 2-Opt)"]
+    S --> C["Crossover: OX (permutacion) + BLX-alpha (reales)"]
+    C --> M["Mutaciones: Swap/Reemplazo/2-Opt (perm) + Gaussiana (reales)"]
     M --> EL["Elitismo: Mejores E=2 individuos"]
     EL --> N["Nueva Poblacion 40"]
-    N --> C2{"¿Convergencia? o Max 50 gen?"}
+    N --> C2{"Convergencia o Max 50 gen?"}
     C2 -->|No| E
-    C2 -->|Si| R["Ruta Óptima (Ventana K)"]
+    C2 -->|Si| R["Ruta Optima + Nivel Exigencia"]
 ```
 
 ---
