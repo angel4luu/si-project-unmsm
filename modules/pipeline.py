@@ -53,8 +53,8 @@ class LomasPipelineOrchestrator:
         # 1. Extracción de semántica cualitativa mediante LomasLLMService
         fuzzy_prefs = self.llm_service.extraer_preferencias_cualitativas(user_prefs.texto_usuario)
 
-        # 2. Mapeo determinista de días a K mediante LomasMappingService
-        k = self.mapping_service.dias_a_k(user_prefs.dias_disponibles)
+        # 2. Inferencia difusa: Nivel de Riesgo del catálogo mediante LomasFuzzyEngine
+        riesgos_todos = self.fuzzy_engine.calcular_riesgos_catalogo(self.destinos)
 
         # 3. Beneficios base intrínsecos del catálogo (con bonificación por patrimonio)
         beneficios_base = {
@@ -62,33 +62,15 @@ class LomasPipelineOrchestrator:
             for d in self.destinos
         }
 
-        # 4. Inferencia difusa: Nivel de Riesgo del catálogo mediante LomasFuzzyEngine
-        riesgos_todos = self.fuzzy_engine.calcular_riesgos_catalogo(self.destinos)
+        # 4. Mapeo y adaptación de parámetros mediante LomasMappingService
+        config_ag = self.mapping_service.preparar_configuracion_ag(user_prefs, fuzzy_prefs)
 
-        # 5. Adaptación dinámica de parámetros del AG según el perfil y condición física del usuario
-        # Condición física modula la recompensa por exigencia (delta) y la aversión al riesgo (gamma)
-        cond = (user_prefs.condicion_fisica or "Moderado").lower()
-        if "fácil" in cond or "facil" in cond:
-            delta_exigencia = 1.0
-            gamma_riesgo = 2.0 * fuzzy_prefs.sensibilidad_seguridad
-        elif "difícil" in cond or "dificil" in cond or "fuerte" in cond:
-            delta_exigencia = 3.0
-            gamma_riesgo = 1.0 * fuzzy_prefs.sensibilidad_seguridad
-        else:
-            delta_exigencia = 2.0
-            gamma_riesgo = 1.5 * fuzzy_prefs.sensibilidad_seguridad
-
-        # 6. Optimización evolutiva mediante LomasGeneticOptimizer
+        # 5. Optimización evolutiva mediante LomasGeneticOptimizer
         optimizador = LomasGeneticOptimizer(
             destinos=self.destinos,
             beneficios_base=beneficios_base,
-            k=k,
-            presupuesto=user_prefs.presupuesto_max,
-            dias_disponibles=user_prefs.dias_disponibles,
-            nodo_base=user_prefs.nodo_base.to_dict(),
             fuzzy_engine=self.fuzzy_engine,
-            gamma_riesgo=gamma_riesgo,
-            delta_exigencia=delta_exigencia
+            **config_ag
         )
         resultado_ag = optimizador.optimizar()
 
@@ -105,7 +87,7 @@ class LomasPipelineOrchestrator:
 
         # 9. Empaquetado final en DTO fuertemente tipado
         return OptimizationResultDTO(
-            k=k,
+            k=config_ag["k"],
             ruta_ids=resultado_ag["ruta_ids"],
             destinos_ordenados=resultado_ag["destinos_ordenados"],
             fitness=resultado_ag["fitness"],
