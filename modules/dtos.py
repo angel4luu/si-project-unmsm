@@ -38,8 +38,8 @@ class UserPreferencesDTO:
 @dataclass
 class FuzzySemanticPreferencesDTO:
     """Variables cualitativas extraídas por el LLM a partir del texto libre."""
-    clima_preferido: str = "Garúa"
-    intereses: List[str] = field(default_factory=lambda: ["Naturaleza"])
+    clima_preferido: str = "Soleado"
+    intereses: List[str] = field(default_factory=lambda: ["Naturaleza", "Senderismo"])
     sensibilidad_saturacion: float = 1.0  # Multiplicador de aversión a multitudes [0.5 - 1.5]
     sensibilidad_seguridad: float = 1.0
 

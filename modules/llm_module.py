@@ -30,15 +30,15 @@ class LomasLLMService:
 
     def _extraer_fallback_heuristico(self, texto: str) -> FuzzySemanticPreferencesDTO:
         t = texto.lower()
-        clima = "Garúa"
-        intereses = ["Naturaleza"]
+        clima = "Soleado"
+        intereses = ["Naturaleza", "Senderismo"]
         sensibilidad_saturacion = 1.0
         sensibilidad_seguridad = 1.0
 
-        if any(p in t for p in ["sol", "soleado", "despejado"]):
-            clima = "Soleado"
-        elif any(p in t for p in ["garúa", "garua", "neblina", "verde"]):
+        if any(p in t for p in ["garúa", "garua", "neblina", "verde"]):
             clima = "Garúa"
+        elif any(p in t for p in ["sol", "soleado", "despejado"]):
+            clima = "Soleado"
 
         if any(p in t for p in ["arqueología", "arqueologia", "ruinas", "cultura", "historia"]):
             intereses.append("Arqueología")
@@ -97,14 +97,23 @@ class LomasLLMService:
 
         return "\n".join(lineas)
 
-    def extraer_preferencias_usuario(self, texto: str) -> Dict[str, Any]:
-        t = texto.lower()
+    def extraer_preferencias_usuario(self, texto: Optional[str]) -> Dict[str, Any]:
+        if not texto or not str(texto).strip():
+            return {
+                "dias_disponibles": 3,
+                "presupuesto_max": 60.0,
+                "condicion_fisica": "Moderado",
+                "clima_preferido": "Soleado",
+                "intereses": ["Naturaleza", "Senderismo"]
+            }
+
+        t = str(texto).lower()
         perfil = {
             "dias_disponibles": 3,
             "presupuesto_max": 60.0,
             "condicion_fisica": "Moderado",
-            "clima_preferido": "Garúa",
-            "intereses": ["Naturaleza"]
+            "clima_preferido": "Soleado",
+            "intereses": ["Naturaleza", "Senderismo"]
         }
         m_dias = re.search(r'(\d+)\s*(?:días|dias|dia|día)', t)
         if m_dias:
@@ -130,7 +139,7 @@ def extraer_preferencias_cualitativas(texto: Optional[str]) -> FuzzySemanticPref
     return LomasLLMService().extraer_preferencias_cualitativas(texto)
 
 
-def extraer_preferencias_usuario(texto: str) -> Dict[str, Any]:
+def extraer_preferencias_usuario(texto: Optional[str]) -> Dict[str, Any]:
     return LomasLLMService().extraer_preferencias_usuario(texto)
 
 

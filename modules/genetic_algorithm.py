@@ -61,6 +61,7 @@ class LomasGeneticOptimizer:
         lambda_tiempo: float = 25.0,
         gamma_riesgo: float = 1.5,
         delta_exigencia: float = 2.0,
+        exigencia_target: float = 0.50,
         semilla: Optional[int] = None,
         nodo_base: Optional[Dict[str, float]] = None,
         fuzzy_engine: Optional[LomasFuzzyEngine] = None
@@ -101,6 +102,7 @@ class LomasGeneticOptimizer:
         self.lambda_tiempo = float(lambda_tiempo)
         self.gamma_riesgo = float(gamma_riesgo)
         self.delta_exigencia = float(delta_exigencia)
+        self.exigencia_target = float(exigencia_target)
 
         # Precalculo en caché de riesgos mediante la clase inyectada
         self.riesgos_lomas = self.fuzzy_engine.calcular_riesgos_catalogo(self.destinos)
@@ -110,7 +112,7 @@ class LomasGeneticOptimizer:
         ruta = self.obtener_ruta_activa(individuo)
         beneficio_base = sum(self.beneficios_base.get(did, 5.0) for did in ruta)
 
-        # Componente 1: Nivel de Exigencia Difusa (evaluado con fuzzy_engine)
+        # Componente 1: Nivel de Exigencia Difusa (penalización por desvío del perfil objetivo)
         if len(individuo) >= self.n_total + 3:
             horas = float(individuo[self.n_total])
             cobertura = float(individuo[self.n_total + 1])
@@ -119,11 +121,11 @@ class LomasGeneticOptimizer:
             horas, cobertura, extension = 3.5, 0.50, 5.0
 
         nivel_exigencia = self.fuzzy_engine.evaluar_exigencia(horas, cobertura, extension)
-        bono_exigencia = self.delta_exigencia * nivel_exigencia
+        penalizacion_exigencia = self.delta_exigencia * ((nivel_exigencia - self.exigencia_target) ** 2)
 
         # Componente 2: Penalización de Riesgo Difuso modulada por exigencia
         riesgo_acumulado = sum(self.riesgos_lomas.get(did, 5.0) for did in ruta)
-        factor_tolerancia = 1.0 - (nivel_exigencia * 0.3)
+        factor_tolerancia = 1.0 - (nivel_exigencia * 0.2)
         penalizacion_riesgo = self.gamma_riesgo * (riesgo_acumulado / 10.0) * factor_tolerancia
 
         # Desplazamiento Radial desde nodo base
@@ -142,7 +144,7 @@ class LomasGeneticOptimizer:
 
         omega_unicidad = 1000.0 * (len(ruta) - len(set(ruta)))
 
-        return beneficio_base + bono_exigencia - penalizacion_riesgo - costo_desplazamiento - omega_presupuesto - omega_tiempo - omega_unicidad
+        return beneficio_base - penalizacion_exigencia - penalizacion_riesgo - costo_desplazamiento - omega_presupuesto - omega_tiempo - omega_unicidad
 
     def obtener_ruta_activa(self, individuo: list) -> List[str]:
         return individuo[:self.k]
@@ -237,7 +239,13 @@ class LomasGeneticOptimizer:
         candidatos = [d for d in self.destinos if d.get("costo_estimado", 15.0) <= self.presupuesto] or self.destinos
         mejor_destino = max(candidatos, key=lambda d: self.beneficios_base.get(d["id"], 5.0) - (0.15 * self.riesgos_lomas.get(d["id"], 5.0)))
         mejor_id = mejor_destino["id"]
-        genes_reales_default = [3.5, 0.50, 5.0]
+        if self.exigencia_target <= 0.35:
+            genes_reales_default = [1.5, 0.20, 2.0]
+        elif self.exigencia_target >= 0.70:
+            genes_reales_default = [5.5, 0.90, 8.5]
+        else:
+            genes_reales_default = [3.5, 0.50, 5.0]
+
         cromosoma = [mejor_id] + [did for did in self.todos_ids if did != mejor_id] + genes_reales_default
         fit_final = self.fitness(cromosoma)
         nivel_exig = self.fuzzy_engine.evaluar_exigencia(*genes_reales_default)
@@ -254,7 +262,11 @@ class LomasGeneticOptimizer:
             "ruta_ids": [mejor_id],
             "destinos_ordenados": [mejor_destino],
             "cromosoma_completo": cromosoma,
-            "genes_reales": {"horas_recorrido": 3.5, "cobertura_zona": 0.50, "extension_circuito": 5.0},
+            "genes_reales": {
+                "horas_recorrido": genes_reales_default[0],
+                "cobertura_zona": genes_reales_default[1],
+                "extension_circuito": genes_reales_default[2]
+            },
             "nivel_exigencia": nivel_exig,
             "fitness": round(fit_final, 3),
             "costo_total": round(mejor_destino.get("costo_estimado", 15.0), 2),

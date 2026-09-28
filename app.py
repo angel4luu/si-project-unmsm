@@ -111,16 +111,25 @@ def main():
         st.header("Perfil del Turista")
 
         st.subheader("1. Parámetros de ruta (AG)")
-        dias_input = st.slider("Días disponibles para viajar:", min_value=1, max_value=15, value=3, help="Determina cuántas lomas (K) se seleccionarán.")
+        dias_input = st.slider("Días disponibles para viajar:", min_value=1, max_value=15, value=3, help="Determina cuántas lomas (K) se seleccionarán (máximo 6 destinos activos para evitar saturación de traslados interurbanos).")
         presupuesto_input = st.slider("Presupuesto máximo total (S/):", min_value=15, max_value=300, value=60, step=5, help="Límite monetario para la penalización del AG.")
         condicion_input = st.selectbox("Condición física del viajero:", ["Fácil", "Moderado", "Difícil"], index=1)
 
-        st.subheader("2. Preferencias difusas y clima (IA)")
+        st.subheader("2. Preferencias cualitativas y clima (NLP/IA)")
+        st.caption("El motor NLP calibrará las reglas difusas y el AG a partir de tus palabras clave:")
+        with st.expander("ℹ️ Ver características reconocibles", expanded=False):
+            st.markdown("""
+            - ☀️ **Clima/Ambiente:** *soleado, despejado, garúa, neblina, verde.*
+            - 🏛️ **Intereses:** *arqueología, ruinas, miradores, fotografía, paisajes.*
+            - 🛡️ **Seguridad:** *muy seguro, vigilancia, zona tranquila.*
+            - 🌿 **Afluencia:** *tranquilo, sin gente, poco concurrido, aislado.*
+            """)
+
         texto_usuario = st.text_area(
-            "Preferencias adicionales (Opcional):",
-            placeholder="Ejemplo: 'Prefiero lomas poco concurridas (baja saturación), muy seguras, con clima de neblina/garúa y senderos de acceso fácil.'",
-            height=110,
-            help="Orienta las 4 variables difusas: Saturación esperada, Nivel de Seguridad, Clima/Verdor y Accesibilidad."
+            "Describe tu experiencia ideal (Opcional):",
+            placeholder="Ejemplo: 'Quiero un trekking en un día soleado, con ruinas arqueológicas y miradores, en senderos muy seguros y poco concurridos.'",
+            height=100,
+            help="Si se deja vacío, el sistema asumirá condiciones estándar favorables (soleado, senderismo general en naturaleza y tolerancia estándar)."
         )
 
         st.markdown("---")
@@ -211,6 +220,10 @@ def main():
                 st.rerun()
 
         # 1. Tarjetas de Métricas Principales (5 Columnas)
+        pres_usuario = st.session_state.perfil_usuario.get("presupuesto_max", 0.0) if st.session_state.perfil_usuario else 0.0
+        if pres_usuario > 0 and ag['costo_total'] > pres_usuario:
+            st.warning(f"⚠️ **Aviso de Presupuesto:** El costo estimado (S/ {ag['costo_total']:.2f}) supera el presupuesto asignado (S/ {pres_usuario:.2f}). Se seleccionaron las lomas más económicas del catálogo para minimizar la penalización.")
+
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("Destinos (K)", f"{resultado['k']}")
         m2.metric("Costo total", f"S/ {ag['costo_total']:.2f}")

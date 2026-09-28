@@ -28,38 +28,42 @@ class LomasMappingService:
         cls,
         condicion_fisica: str,
         sensibilidad_seguridad: float = 1.0
-    ) -> Tuple[float, float]:
+    ) -> Tuple[float, float, float]:
         """
         Traduce la condición física cualitativa a los hiperparámetros del AG:
-        - delta_exigencia: Recompensa por nivel de esfuerzo físico exploratorio.
+        - delta_exigencia: Peso de penalización por desvío del esfuerzo objetivo.
         - gamma_riesgo: Penalización por riesgo difuso acumulado (modulada por sensibilidad).
+        - exigencia_target: Nivel objetivo difuso [0.0 - 1.0] (Fácil ~0.20, Moderado ~0.50, Difícil ~0.85).
         """
         cond = (condicion_fisica or "Moderado").lower().strip()
         if "fácil" in cond or "facil" in cond:
-            delta_base, gamma_base = 1.0, 2.0
+            delta_base, gamma_base, target = 4.0, 2.0, 0.20
         elif "difícil" in cond or "dificil" in cond or "fuerte" in cond:
-            delta_base, gamma_base = 3.0, 1.0
+            delta_base, gamma_base, target = 3.0, 1.0, 0.85
         else:
-            delta_base, gamma_base = 2.0, 1.5
+            delta_base, gamma_base, target = 3.0, 1.5, 0.50
 
         gamma_ajustado = round(gamma_base * float(sensibilidad_seguridad), 3)
-        return delta_base, gamma_ajustado
+        return delta_base, gamma_ajustado, target
 
     @classmethod
     def mapear_restricciones_presupuesto(
         cls,
         presupuesto_max: float,
         k: int
-    ) -> Dict[str, float]:
+    ) -> Dict[str, Any]:
         """
-        Calcula las bandas de tolerancia y métricas de presupuesto por destino.
+        Calcula las bandas de tolerancia y métricas de viabilidad presupuestal por destino.
         """
         p_val = max(10.0, float(presupuesto_max))
         k_val = max(1, int(k))
+        umbral_min = round(k_val * 8.0, 2)
+        es_factible = p_val >= umbral_min
         return {
             "presupuesto_total": p_val,
             "presupuesto_por_destino": round(p_val / k_val, 2),
-            "umbral_minimo_viable": round(k_val * 8.0, 2)
+            "umbral_minimo_viable": umbral_min,
+            "es_factible": es_factible
         }
 
     @classmethod
@@ -72,7 +76,7 @@ class LomasMappingService:
         Consolida y adapta todas las preferencias del usuario para instanciar LomasGeneticOptimizer.
         """
         k = cls.dias_a_k(user_prefs.dias_disponibles)
-        delta_exigencia, gamma_riesgo = cls.mapear_pesos_condicion(
+        delta_exigencia, gamma_riesgo, exigencia_target = cls.mapear_pesos_condicion(
             user_prefs.condicion_fisica,
             fuzzy_prefs.sensibilidad_seguridad
         )
@@ -84,7 +88,8 @@ class LomasMappingService:
             "dias_disponibles": int(user_prefs.dias_disponibles),
             "nodo_base": nodo_dict,
             "delta_exigencia": delta_exigencia,
-            "gamma_riesgo": gamma_riesgo
+            "gamma_riesgo": gamma_riesgo,
+            "exigencia_target": exigencia_target
         }
 
 

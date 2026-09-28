@@ -51,6 +51,39 @@ class TestUserScenarios(unittest.TestCase):
         self.assertLessEqual(res_facil.costo_total, 120.0)
         self.assertLessEqual(res_dificil.costo_total, 120.0)
 
+        # Validar diferenciación dinámica de exigencia difusa
+        self.assertLess(res_facil.nivel_exigencia, res_dificil.nivel_exigencia)
+        self.assertLessEqual(res_facil.nivel_exigencia, 0.45)
+        self.assertGreaterEqual(res_dificil.nivel_exigencia, 0.70)
+
+    def test_escenario_dias_mayores_a_6_clamp_a_6(self):
+        """Verifica que solicitar 10 o 12 días se limite a un máximo de K=6 destinos por saturación logística."""
+        for dias_input in [10, 12, 15]:
+            dto = UserPreferencesDTO(
+                dias_disponibles=dias_input,
+                presupuesto_max=200.0,
+                condicion_fisica="Moderado"
+            )
+            res = self.orchestrator.run(dto)
+            self.assertEqual(res.k, 6)
+            self.assertEqual(len(res.ruta_ids), 6)
+            self.assertEqual(len(set(res.ruta_ids)), 6)
+
+    def test_escenario_presupuesto_ultra_bajo_factibilidad(self):
+        """
+        Verifica que ante un presupuesto muy bajo (ej. S/ 10 para 3 días), el AG
+        seleccione las lomas más económicas del catálogo minimizando la penalización cuadrática.
+        """
+        dto_ultra_bajo = UserPreferencesDTO(
+            dias_disponibles=3,
+            presupuesto_max=10.0,
+            condicion_fisica="Fácil"
+        )
+        res = self.orchestrator.run(dto_ultra_bajo)
+        self.assertEqual(res.k, 3)
+        self.assertGreater(res.costo_total, 10.0)  # Físicamente insoslayable por catálogo
+        self.assertLessEqual(res.costo_total, 35.0)  # Debe haber seleccionado las más baratas
+
     def test_escenario_atajo_1_dia(self):
         """Verifica que 1 día use el atajo determinista y retorne exactamente 1 destino."""
         dto_1dia = UserPreferencesDTO(
