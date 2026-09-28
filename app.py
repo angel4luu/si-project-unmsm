@@ -2,11 +2,9 @@ import os
 import json
 import streamlit as st
 
-# Módulos del sistema inteligente
-from modules.mapping import dias_a_k
-from modules.fuzzy_module import calcular_riesgos_todos_destinos, evaluar_riesgo_loma, evaluar_exigencia
-from modules.genetic_algorithm import optimizar_ruta_lomas
-from modules.llm_module import extraer_preferencias_usuario, generar_itinerario_narrativo
+# Módulos del sistema inteligente (POO y DTOs)
+from modules.dtos import UserPreferencesDTO, CoordenadasDTO
+from modules.pipeline import LomasPipelineOrchestrator
 from modules.access_module import obtener_guia_acceso
 
 # Verificación de librerías de mapas
@@ -98,7 +96,6 @@ def main():
     destinos_dict = {d['id']: d for d in destinos}
 
     # Inicializar estado de sesión para persistencia entre renders
-    # Inicializar estado de sesión para persistencia entre renders
     if 'resultado_optimizacion' not in st.session_state:
         st.session_state.resultado_optimizacion = None
     if 'perfil_usuario' not in st.session_state:
@@ -133,53 +130,43 @@ def main():
 
         if btn_optimizar:
             with st.spinner("Procesando: LLM -> Mapeo -> Lógica Difusa -> Algoritmo Genético..."):
-                # 1. Extracción de entidades de texto libre o fallback a formulario
-                if texto_usuario.strip():
-                    perfil_extraido = extraer_preferencias_usuario(texto_usuario)
-                else:
-                    perfil_extraido = {}
-
-                perfil = {
-                    "dias_disponibles": dias_input,
-                    "presupuesto_max": float(presupuesto_input),
-                    "condicion_fisica": condicion_input,
-                    "clima_preferido": perfil_extraido.get("clima_preferido", "Garúa"),
-                    "intereses": perfil_extraido.get("intereses", ["Naturaleza"]),
-                    "nodo_base": st.session_state.nodo_base
-                }
-
-                nodo_base_actual = st.session_state.nodo_base
-
-                # 2. Mapeo K
-                k = dias_a_k(perfil["dias_disponibles"])
-
-                # 3. Beneficios base intrínsecos (sin lógica difusa)
-                beneficios_base = {
-                    d['id']: round(7.0 + (1.0 if d.get('patrimonio', False) else 0.0), 2)
-                    for d in destinos
-                }
-
-                # 4. Algoritmo Genético Híbrido (con lógica difusa dual integrada)
-                resultado_ag = optimizar_ruta_lomas(
-                    destinos=destinos,
-                    beneficios_base=beneficios_base,
-                    k=k,
-                    presupuesto=perfil["presupuesto_max"],
-                    dias_disponibles=perfil["dias_disponibles"],
-                    nodo_base=nodo_base_actual
+                # 1. Construir DTO fuertemente tipado
+                user_dto = UserPreferencesDTO(
+                    dias_disponibles=dias_input,
+                    presupuesto_max=float(presupuesto_input),
+                    condicion_fisica=condicion_input,
+                    nodo_base=CoordenadasDTO(
+                        lat=st.session_state.nodo_base["lat"],
+                        lon=st.session_state.nodo_base["lon"]
+                    ),
+                    texto_usuario=texto_usuario.strip() if texto_usuario.strip() else None
                 )
 
-                # 5. Itinerario narrativo
-                itinerario = generar_itinerario_narrativo(resultado_ag, perfil)
+                # 2. Ejecutar mediante el Orquestador Centralizado
+                orquestador = LomasPipelineOrchestrator(destinos)
+                resultado_dto = orquestador.run(user_dto)
 
-                # Guardar en sesión
+                # 3. Guardar en sesión de Streamlit
                 st.session_state.resultado_optimizacion = {
-                    'ag': resultado_ag,
-                    'beneficios_base': beneficios_base,
-                    'itinerario': itinerario,
-                    'k': k
+                    'ag': {
+                        'ruta_ids': resultado_dto.ruta_ids,
+                        'destinos_ordenados': resultado_dto.destinos_ordenados,
+                        'costo_total': resultado_dto.costo_total,
+                        'distancia_total_km': resultado_dto.distancia_total_km,
+                        'riesgos_ruta': resultado_dto.riesgos_ruta,
+                        'nivel_exigencia': resultado_dto.nivel_exigencia,
+                        'tramos': resultado_dto.tramos,
+                        'genes_reales': resultado_dto.genes_reales,
+                        'metodo': resultado_dto.metodo,
+                        'fitness': resultado_dto.fitness,
+                        'grafica_ascii': resultado_dto.grafica_ascii
+                    },
+                    'beneficios_base': {d['id']: 7.0 for d in destinos},
+                    'itinerario': resultado_dto.itinerario_narrativo,
+                    'k': resultado_dto.k,
+                    'guias_acceso': resultado_dto.guias_acceso
                 }
-                st.session_state.perfil_usuario = perfil
+                st.session_state.perfil_usuario = user_dto.to_dict()
                 st.success("¡Ruta óptima calculada exitosamente!")
 
     # ÁREA PRINCIPAL: Layout Jerárquico Reorganizado
@@ -193,33 +180,19 @@ def main():
         mapa = crear_mapa_lomas(destinos, ruta_ids, st.session_state.nodo_base)
         mapa_output = st_folium(mapa, width="100%", height=480, returned_objects=["last_active_drawing"])
 
-        nueva_pos = None
-
         # Capturar únicamente el arrastre/soltado del marcador (last_active_drawing)
         if mapa_output and mapa_output.get("last_active_drawing"):
             drawing = mapa_output["last_active_drawing"]
-            if isinstance(drawing, dict) and "geometry" in drawing:
-                coords = drawing["geometry"].get("coordinates", [])
-                if len(coords) >= 2:
-                    # Folium / GeoJSON usa [lon, lat]
-                    d_lon = round(coords[0], 4)
-                    d_lat = round(coords[1], 4)
+            geometry = drawing.get("geometry", {})
+            coords = geometry.get("coordinates")
 
-                    # Verificar si coincide con una loma catalogada
-                    es_loma = any(
-                        abs(round(d["coordenadas"]["lat"], 4) - d_lat) < 0.005 and
-                        abs(round(d["coordenadas"]["lon"], 4) - d_lon) < 0.005
-                        for d in destinos
-                    )
-
-                    if not es_loma:
-                        nueva_pos = {"lat": d_lat, "lon": d_lon}
-
-        # Si se detectó una nueva posición por arrastre válida, actualizar
-        if nueva_pos and (nueva_pos["lat"] != st.session_state.nodo_base["lat"] or nueva_pos["lon"] != st.session_state.nodo_base["lon"]):
-            st.session_state.nodo_base = nueva_pos
-            st.toast(f"Alojamiento movido a ({nueva_pos['lat']}, {nueva_pos['lon']})")
-            st.rerun()
+            if coords and len(coords) == 2:
+                nueva_lat = round(float(coords[1]), 4)
+                nueva_lon = round(float(coords[0]), 4)
+                if nueva_lat != st.session_state.nodo_base["lat"] or nueva_lon != st.session_state.nodo_base["lon"]:
+                    st.session_state.nodo_base = {"lat": nueva_lat, "lon": nueva_lon}
+                    st.toast(f"Alojamiento movido a ({nueva_lat}, {nueva_lon})")
+                    st.rerun()
     else:
         st.info("Para visualizar el mapa interactivo en Folium, instala `pip install folium streamlit-folium`.")
 
@@ -285,7 +258,7 @@ def main():
                 ]
                 st.dataframe(tramos_df, use_container_width=True)
             else:
-                st.write("Excursión de 1 solo destino desde el nodo base.")
+                st.write("Excursión radial desde el nodo base hacia cada loma activa.")
 
         with tabs[3]:
             st.write("### Componente 2: Nivel de Riesgo Difuso por Loma [0-10]")

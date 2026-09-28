@@ -16,104 +16,68 @@ if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-from modules.mapping import dias_a_k
-from modules.fuzzy_module import calcular_riesgos_todos_destinos
-from modules.genetic_algorithm import optimizar_ruta_lomas
-from modules.llm_module import extraer_preferencias_usuario, generar_itinerario_narrativo
-from modules.access_module import obtener_guia_acceso
-
-
-def cargar_destinos() -> list:
-    """Carga los 15 destinos desde data/destinos.json."""
-    ruta_json = os.path.join(os.path.dirname(__file__), "data", "destinos.json")
-    with open(ruta_json, "r", encoding="utf-8") as f:
-        return json.load(f)
+from modules.dtos import UserPreferencesDTO, CoordenadasDTO
+from modules.pipeline import LomasPipelineOrchestrator
+from modules.llm_module import extraer_preferencias_usuario
 
 
 def ejecutar_pipeline(texto_usuario: str, verbose: bool = True) -> Dict[str, Any]:
     """
-    Ejecuta el pipeline completo:
-    1. NLP/LLM -> 2. Mapeo K -> 3. Evaluacion Base -> 4. Algoritmo Genetico Hibrido -> 5. Itinerario
+    Ejecuta el pipeline completo utilizando el orquestador central LomasPipelineOrchestrator.
     """
     if verbose:
         print("\nSISTEMA INTELIGENTE DE RUTAS: LOMAS DE LIMA")
 
-    # Paso 0: Catalogo
-    destinos = cargar_destinos()
-
-    # Paso 1: Extraccion de preferencias (NLP / LLM)
-    perfil = extraer_preferencias_usuario(texto_usuario)
-    dias = perfil.get("dias_disponibles", 3)
-    presupuesto = perfil.get("presupuesto_max", 60.0)
-
-    # Paso 2: Mapeo de dias a K destinos
-    k = dias_a_k(dias)
-
-    # Paso 3: Evaluacion de incertidumbre (Logica Difusa de Riesgo) y Beneficios Base
-    scores_difusos = calcular_riesgos_todos_destinos(destinos)
-    beneficios_base = {}
-    for d in destinos:
-        did = d['id']
-        base = 7.0
-        if d.get("patrimonio", False):
-            base += 1.0
-        beneficios_base[did] = round(base, 2)
-
-    # Paso 4: Optimizacion de ruta (Algoritmo Genetico Hibrido con Logica Difusa Dual)
-    resultado_ag = optimizar_ruta_lomas(
-        destinos=destinos,
-        beneficios_base=beneficios_base,
-        k=k,
-        presupuesto=presupuesto,
-        dias_disponibles=dias,
-        generaciones=50,
-        tam_poblacion=40
+    # 1. Extracción de perfil del usuario (compatibilidad heurística / LLM)
+    perfil_raw = extraer_preferencias_usuario(texto_usuario)
+    user_dto = UserPreferencesDTO(
+        dias_disponibles=perfil_raw.get("dias_disponibles", 3),
+        presupuesto_max=perfil_raw.get("presupuesto_max", 60.0),
+        condicion_fisica=perfil_raw.get("condicion_fisica", "Moderado"),
+        nodo_base=CoordenadasDTO(lat=-12.0464, lon=-77.0428),
+        texto_usuario=texto_usuario
     )
 
-    # Paso 5: Itinerario narrativo y guias de transporte
-    itinerario = generar_itinerario_narrativo(resultado_ag, perfil)
-    guias_transporte = {did: obtener_guia_acceso(did) for did in resultado_ag["ruta_ids"]}
+    # 2. Ejecución a través del Orquestador POO
+    orquestador = LomasPipelineOrchestrator()
+    resultado = orquestador.run(user_dto)
+    scores_difusos_catalogo = orquestador.fuzzy_engine.calcular_riesgos_catalogo(orquestador.destinos)
 
     if verbose:
-        print(f"\n[1] Preferencias extraidas: {dias} dias | Presupuesto: S/{presupuesto:.2f} | Condicion: {perfil.get('condicion_fisica')}")
-        print(f"[2] Mapeo: {dias} dias -> K = {k} destinos")
-        metodo = resultado_ag.get("metodo", "algoritmo_genetico")
-        desc_metodo = "Atajo Determinista K=1" if metodo == "atajo_determinista" else "Algoritmo Genetico Hibrido"
-        print(f"[4] Ruta Optima ({desc_metodo}): {' -> '.join(resultado_ag['ruta_ids'])} | Fitness: {resultado_ag['fitness']:.3f}")
-        print(f"    Costo total: S/{resultado_ag['costo_total']:.2f} | Distancia: {resultado_ag['distancia_total_km']:.1f} km")
+        print(f"\n[1] Preferencias extraídas: {user_dto.dias_disponibles} días | Presupuesto: S/{user_dto.presupuesto_max:.2f} | Condición: {user_dto.condicion_fisica}")
+        print(f"[2] Mapeo: {user_dto.dias_disponibles} días -> K = {resultado.k} destinos")
+        desc_metodo = "Atajo Determinista K=1" if resultado.metodo == "atajo_determinista" else "Algoritmo Genético Híbrido"
+        print(f"[4] Ruta Óptima ({desc_metodo}): {' -> '.join(resultado.ruta_ids)} | Fitness: {resultado.fitness:.3f}")
+        print(f"    Costo total: S/{resultado.costo_total:.2f} | Distancia: {resultado.distancia_total_km:.1f} km")
 
-        # Detalles de logica difusa integrada
-        nivel_exig = resultado_ag.get("nivel_exigencia", 0.0)
-        genes_reales = resultado_ag.get("genes_reales", {})
         print(f"\n[Componentes Difusos Integrados]")
-        print(f"- Componente 1 (Exigencia en Cromosoma): {nivel_exig:.2f}")
-        print(f"  (Horas: {genes_reales.get('horas_recorrido', 0)}h, Cobertura: {genes_reales.get('cobertura_zona', 0)}, Extension: {genes_reales.get('extension_circuito', 0)} km)")
+        print(f"- Componente 1 (Exigencia en Cromosoma): {resultado.nivel_exigencia:.2f}")
+        print(f"  (Horas: {resultado.genes_reales.get('horas_recorrido', 0)}h, Cobertura: {resultado.genes_reales.get('cobertura_zona', 0)}, Extensión: {resultado.genes_reales.get('extension_circuito', 0)} km)")
         print(f"- Componente 2 (Riesgo en Fitness por Loma):")
-        for did in resultado_ag["ruta_ids"]:
-            r = resultado_ag.get("riesgos_ruta", {}).get(did, 5.0)
+        for did in resultado.ruta_ids:
+            r = resultado.riesgos_ruta.get(did, 5.0)
             print(f"  * [{did}]: Riesgo Difuso = {r:.2f} / 10.0")
 
-        print(f"\n{itinerario}")
-        print("\nGUIA BASICA DE TRANSPORTE")
-        for did, guia in guias_transporte.items():
+        print(f"\n{resultado.itinerario_narrativo}")
+        print("\nGUÍA BÁSICA DE TRANSPORTE")
+        for guia in resultado.guias_acceso:
             print(f"- {guia['nombre']}: {guia['medio_transporte']} (~{guia['tiempo_total_min']} min)")
-        print("\n[OK] Pipeline finalizado con exito.\n")
+        print("\n[OK] Pipeline finalizado con éxito.\n")
 
     return {
-        "perfil": perfil,
-        "k": k,
-        "beneficios_base": beneficios_base,
-        "scores_difusos": scores_difusos,
-        "resultado_ag": resultado_ag,
-        "itinerario": itinerario,
-        "guias_transporte": guias_transporte
+        "perfil": user_dto.to_dict(),
+        "k": resultado.k,
+        "scores_difusos": scores_difusos_catalogo,
+        "resultado_ag": resultado.to_dict(),
+        "itinerario": resultado.itinerario_narrativo,
+        "guias_transporte": {g["nombre"]: g for g in resultado.guias_acceso}
     }
 
 
 def main():
     parser = argparse.ArgumentParser(description="Pipeline CLI de Rutas en Lomas de Lima")
     parser.add_argument("--texto", type=str, default=None, help="Texto con preferencias del usuario")
-    parser.add_argument("--demo", action="store_true", help="Ejecuta demostracion de prueba")
+    parser.add_argument("--demo", action="store_true", help="Ejecuta demostración de prueba")
     args = parser.parse_args()
 
     texto = args.texto or "Quiero viajar 3 dias con 60 soles por senderos verdes de dificultad moderada."

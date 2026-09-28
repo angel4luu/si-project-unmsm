@@ -1,26 +1,27 @@
 """
-Modulo de Mapeo Determinista (Dias Disponibles -> K Destinos).
+Módulo de Mapeo Determinista Urbano (POO).
 """
 
 
-def dias_a_k(dias_disponibles: int, k_min: int = 2, k_max: int = 6) -> int:
-    """
-    Calcula el numero de destinos K a visitar segun los dias disponibles del turista.
+class LomasMappingService:
+    """Servicio para mapear los días disponibles al número de destinos K."""
 
-    Regla de Asignacion Urbana:
-    - 1 dia disponible: Retorna K = 1 (horizonte unitario para atajo determinista).
-    - 2 o mas dias: Asigna 1 destino por dia, acotado entre k_min (2) y k_max (6).
-      Garantiza un espacio combinatorio formal para el Algoritmo Genetico.
+    @staticmethod
+    def dias_a_k(dias: int) -> int:
+        """
+        Mapea el número de días disponibles al parámetro K de destinos activos.
+        - Días <= 1: Retorna K=1 (atajo determinista).
+        - Días >= 2: Retorna K = clamp(días, 2, 6).
+        """
+        if dias <= 1:
+            return 1
+        return min(max(2, int(dias)), 6)
 
-    Args:
-        dias_disponibles (int): Dias de trekking declarados por el usuario.
-        k_min (int): Numero minimo de destinos para optimizacion combinatoria (default 2).
-        k_max (int): Cota maxima de destinos para itinerario en Lima (default 6).
 
-    Returns:
-        int: Numero de destinos K a seleccionar y ordenar.
-    """
-    dias = int(dias_disponibles)
-    if dias <= 1:
-        return 1
-    return min(max(k_min, dias), k_max)
+# Función para compatibilidad con código existente
+def dias_a_k(dias: int) -> int:
+    return LomasMappingService.dias_a_k(dias)
+
+
+__all__ = ["LomasMappingService", "dias_a_k"]
+
