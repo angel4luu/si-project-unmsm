@@ -58,12 +58,12 @@ La aplicación se implementa con **Streamlit** (web en Python) para la interfaz,
 
 | Aspecto                                       | Apps existentes                    | Este proyecto                                          |
 | --------------------------------------------- | ---------------------------------- | ------------------------------------------------------ |
-| **Razonamiento bajo incertidumbre**           | No aplican                         | 4 variables difusas de incertidumbre (Mamdani)         |
-| **Optimización de rutas**                     | No optimizan (son guías estáticas) | Algoritmo Genético multiobjetivo                       |
+| **Razonamiento bajo incertidumbre**           | No aplican                         | 2 sistemas difusos Mamdani (Riesgo en fitness + Exigencia en cromosoma) |
+| **Optimización de rutas**                     | No optimizan (son guías estáticas) | Algoritmo Genético multiobjetivo híbrido               |
 | **IA Generativa**                             | No integran                        | LLM para interpretar preferencias y generar itinerario |
 | **Enfoque en lomas de Lima**                  | No existe                          | Específico y detallado                                 |
 | **Instrucciones de acceso**                   | No generan rutas de transporte     | LLM genera cómo llegar a cada loma                     |
-| **Sistema de recomendación adaptativo**       | No lo tienen                       | Score continuo \[0,10\] por destino                    |
+| **Sistema de recomendación adaptativo**       | No lo tienen                       | Evaluación de riesgo continuo y nivel de exigencia     |
 | **Mapa interactivo con marcadores numerados** | No lo tienen                       | Folium con focus en ruta óptima y badge de orden       |
 | **Planificación según días disponibles**      | No lo tienen                       | K dinámico según días\_disponibles del usuario         |
 
@@ -77,36 +77,36 @@ La aplicación se implementa con **Streamlit** (web en Python) para la interfaz,
 ```mermaid
 graph TB
     subgraph GUI["Interfaz Grafica (GUI)"]
-        U[ Usuario]
+        U["Usuario"]
     end
     subgraph MOD1["Modulo 1: IA Generativa (LLM)"]
         direction LR
-        L1[ Extraccion de Preferencias]
-        L2[ Generacion JSON]
-        L3[ Generacion Itinerario Natural]
-        L4[ Instrucciones de Acceso]
+        L1["Extraccion de Preferencias"]
+        L2["Generacion JSON"]
+        L3["Generacion Itinerario Natural"]
+        L4["Instrucciones de Acceso"]
     end
     subgraph MOD2["Modulo 2: Algoritmos Heuristicos (AG)"]
         direction TB
-        A1[Inicializacion Poblacion 50]
-        A2[Evaluacion Fitness]
-        A3[Seleccion por Torneo]
-        A4[Crossover + Mutacion]
-        A5[Elitismo + Convergencia]
-        A6[Ruta Óptima]
+        A1["Poblacion 40 Cromosomas Hibridos"]
+        A2["Evaluacion Fitness: Beneficio - Riesgo + Exigencia - Distancia - Multas"]
+        A3["Seleccion por Torneo k=3"]
+        A4["Cruce OX + BLX-alpha"]
+        A5["Mutaciones Swap + 2-Opt + Gaussiana"]
+        A6["Ruta Optima + Nivel de Exigencia"]
     end
     subgraph MOD3["Modulo 3: Razonamiento bajo Incertidumbre (Fuzzy)"]
         direction TB
-        F1[4 Variables de Incertidumbre]
-        F2[Reglas de Inferencia Mamdani]
-        F3[Defuzzificacion por Centroide]
-        F4[Score Destino 0-10]
+        F1["Sistema 1: Nivel de Riesgo (Saturacion, Seguridad, Accesibilidad)"]
+        F2["Sistema 2: Nivel de Exigencia (Horas, Cobertura, Extension)"]
+        F3["Reglas de Inferencia Mamdani"]
+        F4["Defuzzificacion por Centroide"]
     end
 
     U -->|"Texto libre o formulario"| MOD1
     MOD1 -->|"JSON estructurado"| MOD3
-    MOD3 -->|"Scores por destino"| MOD2
-    MOD2 -->|"Ruta optimizada"| MOD1
+    MOD3 -->|"Scores de riesgo y modelo de exigencia"| MOD2
+    MOD2 -->|"Ruta optimizada + exigencia"| MOD1
     MOD1 -->|"Itinerario + accesos"| U
 ```
 
@@ -164,15 +164,15 @@ flowchart TD
     B --> C["Opción A: Texto libre<br/>Opción B: Formulario"]
     C --> D["LLM: Extraer preferencias<br/>→ JSON con días disponibles"]
     D --> E["Mapeo: días disponibles → K"]
-    E --> F["Sistema Difuso: Evaluar cada loma<br/>→ Score [0,10] por destino"]
+    E --> F["Sistema Difuso: Evaluar riesgo de cada loma<br/>→ Score [0,10] de riesgo por destino"]
     F --> K_CHECK{"¿K == 1?"}
-    K_CHECK -->|Sí| SHORTCUT["Atajo Determinista O(N):<br/>Filtrar por presupuesto y<br/>seleccionar mayor Score Difuso"]
-    K_CHECK -->|No| G["AG: Inicializar población<br/>40 permutaciones N=15 (ventana K)"]
-    G --> H["AG: Evaluar Fitness (Radial + Barreras Relativas)<br/>Suma de scores − penalizaciones"]
-    H --> I["AG: Selección + Cruce OX + Mutaciones"]
+    K_CHECK -->|Sí| SHORTCUT["Atajo Determinista O(N):<br/>Filtrar por presupuesto y<br/>seleccionar menor Riesgo y mayor Beneficio"]
+    K_CHECK -->|No| G["AG Híbrido: Inicializar población<br/>40 cromosomas (15 perm + 3 reales)"]
+    G --> H["AG Híbrido: Evaluar Fitness<br/>Beneficio − Riesgo + Exigencia − Distancia − Multas"]
+    H --> I["AG Híbrido: Selección + Cruce OX/BLX-α + Mutaciones"]
     I --> J{"¿Convergencia?<br/>¿o máximo de generaciones?"}
     J -->|No| H
-    J -->|Sí| K["Ruta óptima del AG"]
+    J -->|Sí| K["Ruta óptima + Nivel de exigencia del AG"]
     SHORTCUT --> K
     K --> L["LLM: Generar itinerario<br/>en lenguaje natural"]
     L --> M["LLM: Generar instrucciones<br/>de acceso por destino"]

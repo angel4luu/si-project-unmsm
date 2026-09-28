@@ -4,7 +4,7 @@ import streamlit as st
 
 # Módulos del sistema inteligente
 from modules.mapping import dias_a_k
-from modules.fuzzy_module import calcular_scores_todos_destinos
+from modules.fuzzy_module import calcular_riesgos_todos_destinos, evaluar_riesgo_loma, evaluar_exigencia
 from modules.genetic_algorithm import optimizar_ruta_lomas
 from modules.llm_module import extraer_preferencias_usuario, generar_itinerario_narrativo
 from modules.access_module import obtener_guia_acceso
@@ -153,13 +153,16 @@ def main():
                 # 2. Mapeo K
                 k = dias_a_k(perfil["dias_disponibles"])
 
-                # 3. Lógica Difusa (Evaluación de incertidumbre)
-                scores_difusos = calcular_scores_todos_destinos(destinos)
+                # 3. Beneficios base intrínsecos (sin lógica difusa)
+                beneficios_base = {
+                    d['id']: round(7.0 + (1.0 if d.get('patrimonio', False) else 0.0), 2)
+                    for d in destinos
+                }
 
-                # 4. Algoritmo Genético (con costo de desplazamiento radial desde nodo_base)
+                # 4. Algoritmo Genético Híbrido (con lógica difusa dual integrada)
                 resultado_ag = optimizar_ruta_lomas(
                     destinos=destinos,
-                    scores_difusos=scores_difusos,
+                    beneficios_base=beneficios_base,
                     k=k,
                     presupuesto=perfil["presupuesto_max"],
                     dias_disponibles=perfil["dias_disponibles"],
@@ -172,7 +175,7 @@ def main():
                 # Guardar en sesión
                 st.session_state.resultado_optimizacion = {
                     'ag': resultado_ag,
-                    'scores_difusos': scores_difusos,
+                    'beneficios_base': beneficios_base,
                     'itinerario': itinerario,
                     'k': k
                 }
@@ -234,13 +237,16 @@ def main():
                 st.session_state.perfil_usuario = None
                 st.rerun()
 
-        # 1. Tarjetas de Métricas Principales (4 Columnas)
-        m1, m2, m3, m4 = st.columns(4)
+        # 1. Tarjetas de Métricas Principales (5 Columnas)
+        m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("Destinos (K)", f"{resultado['k']}")
         m2.metric("Costo total", f"S/ {ag['costo_total']:.2f}")
         m3.metric("Distancia radial", f"{ag['distancia_total_km']:.1f} km")
-        score_promedio = sum(resultado['scores_difusos'].get(did, 5.0) for did in ag['ruta_ids']) / max(1, len(ag['ruta_ids']))
-        m4.metric("Score difuso prom.", f"{score_promedio:.2f} / 10")
+        riesgos_ruta = ag.get('riesgos_ruta', {})
+        riesgo_promedio = sum(riesgos_ruta.get(did, 5.0) for did in ag['ruta_ids']) / max(1, len(ag['ruta_ids']))
+        m4.metric("Riesgo prom.", f"{riesgo_promedio:.2f} / 10")
+        nivel_exig = ag.get('nivel_exigencia', 0.0)
+        m5.metric("Nivel exigencia", f"{nivel_exig:.2f} / 1.0")
 
         # 2. Secuencia de Visita con Badges Visuales
         st.write("**Secuencia recomendada de excursiones:**")
@@ -255,7 +261,7 @@ def main():
         st.markdown("<br/>", unsafe_allow_html=True)
 
         # 3. Pestañas de Detalles e Investigación Académica
-        tabs = st.tabs(["Itinerario", "Guía de accesos", "Desplazamiento radial", "Scores difusos", "Métricas del AG"])
+        tabs = st.tabs(["Itinerario", "Guía de accesos", "Desplazamiento radial", "Riesgo y Exigencia Difusa", "Métricas del AG"])
 
         with tabs[0]:
             st.markdown(resultado['itinerario'])
@@ -282,12 +288,28 @@ def main():
                 st.write("Excursión de 1 solo destino desde el nodo base.")
 
         with tabs[3]:
-            st.write("### Puntuación de Recomendación Difusa [0-10]")
-            scores_df = [
-                {"ID": did, "Loma": destinos_dict[did]["nombre"], "Score Difuso": round(resultado['scores_difusos'][did], 2)}
+            st.write("### Componente 2: Nivel de Riesgo Difuso por Loma [0-10]")
+            st.caption("Evaluado mediante inferencia Mamdani (Saturación, Seguridad, Accesibilidad). Menor riesgo = mejor.")
+            riesgos_df = [
+                {
+                    "ID": did,
+                    "Loma": destinos_dict[did]["nombre"],
+                    "Distrito": destinos_dict[did]["distrito"],
+                    "Riesgo Difuso": round(riesgos_ruta.get(did, 5.0), 2),
+                    "Nivel": "Bajo" if riesgos_ruta.get(did, 5.0) <= 3.5 else ("Medio" if riesgos_ruta.get(did, 5.0) <= 6.5 else "Alto")
+                }
                 for did in ag['ruta_ids']
             ]
-            st.dataframe(scores_df, use_container_width=True)
+            st.dataframe(riesgos_df, use_container_width=True)
+
+            st.write("### Componente 1: Nivel de Exigencia de Exploración (Cadena Genética)")
+            st.caption("Variables reales optimizadas evolutivamente dentro del cromosoma híbrido de 18 genes.")
+            genes = ag.get("genes_reales", {})
+            c_g1, c_g2, c_g3, c_g4 = st.columns(4)
+            c_g1.metric("Horas Recorrido", f"{genes.get('horas_recorrido', 0):.1f} h")
+            c_g2.metric("Cobertura Zona", f"{genes.get('cobertura_zona', 0)*100:.0f}%")
+            c_g3.metric("Extensión Circuito", f"{genes.get('extension_circuito', 0):.1f} km")
+            c_g4.metric("Nivel Exigencia", f"{ag.get('nivel_exigencia', 0):.4f}")
 
         with tabs[4]:
             st.write("### Diagnóstico Heurístico y Convergencia Evolutiva")
