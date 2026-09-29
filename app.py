@@ -10,10 +10,42 @@ from modules.access_module import obtener_guia_acceso
 # Verificación de librerías de mapas
 try:
     import folium
+    from branca.element import MacroElement
+    from jinja2 import Template
     from streamlit_folium import st_folium
     MAPAS_DISPONIBLES = True
 except ImportError:
     MAPAS_DISPONIBLES = False
+
+
+# Plugin Leaflet para emitir evento de fin de arrastre hacia streamlit-folium
+if MAPAS_DISPONIBLES:
+    class DraggableMarkerPlugin(MacroElement):
+        def __init__(self, marker):
+            super().__init__()
+            self._name = "DraggableMarkerPlugin"
+            self.marker = marker
+            self._template = Template("""
+                {% macro script(this, kwargs) %}
+                    {{ this.marker.get_name() }}.on('dragend', function(e) {
+                        var latlng = e.target.getLatLng();
+                        map_div.fire('draw:edited', {
+                            layer: {
+                                toGeoJSON: function() {
+                                    return {
+                                        type: 'Feature',
+                                        geometry: {
+                                            type: 'Point',
+                                            coordinates: [latlng.lng, latlng.lat]
+                                        },
+                                        properties: {}
+                                    };
+                                }
+                            }
+                        });
+                    });
+                {% endmacro %}
+            """)
 
 
 # Configuración inicial de Streamlit
@@ -22,6 +54,22 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+
+PRESETS_ZONAS = {
+    "Centro de Lima (Plaza Mayor / Centro Histórico)": (-12.0464, -77.0428),
+    "Miraflores / Barranco (Zona Turística Costa)": (-12.1215, -77.0298),
+    "San Isidro / Lince (Zona Financiera y Hotelera)": (-12.0967, -77.0345),
+    "Aeropuerto Internacional Jorge Chávez / Callao": (-12.0219, -77.1143),
+    "Lima Norte: Los Olivos / MegaPlaza / Comas": (-11.9722, -77.0708),
+    "Lima Norte: Carabayllo / Trapiche (Acceso Lomas Norte)": (-11.8580, -77.0340),
+    "Lima Este: San Juan de Lurigancho (Estación Bayóvar)": (-11.9750, -76.9980),
+    "Lima Este: Ate / La Molina / Santa Anita": (-12.0560, -76.9380),
+    "Lima Sur: Santiago de Surco / SJM": (-12.1485, -76.9744),
+    "Lima Sur: Villa María del Triunfo (VMT)": (-12.1620, -76.9400),
+    "Lima Sur: Lurín / Pachacámac (Acceso Lomas Sur)": (-12.2750, -76.8700),
+    "Chosica / Chaclacayo (Entrada Carretera Central)": (-11.9390, -76.7020)
+}
 
 
 @st.cache_data
@@ -39,15 +87,17 @@ def crear_mapa_lomas(destinos, ruta_ids=None, nodo_base=None):
     
     mapa = folium.Map(location=[lat_mapa, lon_mapa], zoom_start=10, tiles="OpenStreetMap")
 
-    # Marcador de Alojamiento / Nodo Base (d0) Arrastrable (draggable=True)
+    # Marcador de Alojamiento / Nodo Base (d0) Arrastrable con puente de eventos
     if nodo_base:
-        folium.Marker(
+        base_marker = folium.Marker(
             location=[nodo_base["lat"], nodo_base["lon"]],
-            popup=folium.Popup("<div style='font-family: sans-serif;'><b>Tu Alojamiento (Nodo Base)</b><br/>¡Arrastra este pin o haz clic en el mapa para mover tu hospedaje!</div>", max_width=220),
+            popup=folium.Popup("<div style='font-family: sans-serif;'><b>Tu Alojamiento (Nodo Base $d_0$)</b><br/>¡Arrastra este pin para mover tu punto de hospedaje!</div>", max_width=220),
             tooltip="Tu Alojamiento (Arrastra para mover)",
             icon=folium.Icon(color="red", icon="home", prefix="fa"),
             draggable=True
-        ).add_to(mapa)
+        )
+        base_marker.add_to(mapa)
+        mapa.add_child(DraggableMarkerPlugin(base_marker))
 
     orden_map = {}
     if ruta_ids:
@@ -89,6 +139,13 @@ def crear_mapa_lomas(destinos, ruta_ids=None, nodo_base=None):
         ).add_to(mapa)
 
     return mapa
+
+
+def aplicar_preset_zona():
+    sel = st.session_state.get("selector_zona_alojamiento")
+    if sel in PRESETS_ZONAS:
+        plat, plon = PRESETS_ZONAS[sel]
+        st.session_state.nodo_base = {"lat": plat, "lon": plon}
 
 
 def main():
@@ -133,7 +190,17 @@ def main():
         )
 
         st.markdown("---")
-        st.caption("**Punto de Partida (Alojamiento):** Arrastra el marcador rojo en el mapa para establecer tu ubicación exacta.")
+        st.subheader("3. Punto de Partida (Alojamiento $d_0$)")
+        st.caption("Arrastra el pin rojo en el mapa para ubicar tu hospedaje, o elige una zona rápida:")
+
+        st.selectbox(
+            "Zona de referencia rápida:",
+            ["(Mantener ubicación del mapa)", *PRESETS_ZONAS.keys()],
+            key="selector_zona_alojamiento",
+            on_change=aplicar_preset_zona
+        )
+
+        st.caption(f"📍 **Coordenadas activas:** `({st.session_state.nodo_base['lat']:.4f}, {st.session_state.nodo_base['lon']:.4f})`")
 
         btn_optimizar = st.button("Generar ruta óptima", type="primary", use_container_width=True)
 
@@ -180,28 +247,34 @@ def main():
 
     # ÁREA PRINCIPAL: Layout Jerárquico Reorganizado
     st.subheader("Mapa de las Lomas de Lima")
-    st.caption("**Alojamiento (Pin Rojo):** Arrastra el marcador rojo en el mapa para ubicar tu hospedaje/nodo base.")
+    st.caption("**Alojamiento (Pin Rojo):** Arrastra el marcador rojo en el mapa para ubicar tu hospedaje/nodo base ($d_0$).")
 
     resultado = st.session_state.resultado_optimizacion
     ruta_ids = resultado['ag']['ruta_ids'] if resultado else None
 
     if MAPAS_DISPONIBLES:
         mapa = crear_mapa_lomas(destinos, ruta_ids, st.session_state.nodo_base)
-        mapa_output = st_folium(mapa, width="100%", height=480, returned_objects=["last_active_drawing"])
+        mapa_output = st_folium(
+            mapa,
+            width="100%",
+            height=480,
+            key="mapa_folium_lomas",
+            returned_objects=["last_active_drawing"]
+        )
 
-        # Capturar únicamente el arrastre/soltado del marcador (last_active_drawing)
+        # Capturar exclusivamente el evento de fin de arrastre (dragend)
         if mapa_output and mapa_output.get("last_active_drawing"):
             drawing = mapa_output["last_active_drawing"]
             geometry = drawing.get("geometry", {})
             coords = geometry.get("coordinates")
-
             if coords and len(coords) == 2:
-                nueva_lat = round(float(coords[1]), 4)
                 nueva_lon = round(float(coords[0]), 4)
-                if nueva_lat != st.session_state.nodo_base["lat"] or nueva_lon != st.session_state.nodo_base["lon"]:
-                    st.session_state.nodo_base = {"lat": nueva_lat, "lon": nueva_lon}
-                    st.toast(f"Alojamiento movido a ({nueva_lat}, {nueva_lon})")
-                    st.rerun()
+                nueva_lat = round(float(coords[1]), 4)
+                if -13.0 <= nueva_lat <= -11.0 and -78.0 <= nueva_lon <= -76.0:
+                    if nueva_lat != round(st.session_state.nodo_base["lat"], 4) or nueva_lon != round(st.session_state.nodo_base["lon"], 4):
+                        st.session_state.nodo_base = {"lat": nueva_lat, "lon": nueva_lon}
+                        st.toast(f"📍 Alojamiento movido a ({nueva_lat}, {nueva_lon})")
+                        st.rerun()
     else:
         st.info("Para visualizar el mapa interactivo en Folium, instala `pip install folium streamlit-folium`.")
 
@@ -214,9 +287,10 @@ def main():
         with col_tit:
             st.subheader("Resumen de la ruta óptima")
         with col_reset:
-            if st.button("Nueva búsqueda", help="Limpia la ruta actual para realizar otra consulta manteniendo tu punto de partida."):
+            if st.button("Nueva búsqueda", help="Limpia la ruta actual y restablece el punto de partida al Centro de Lima."):
                 st.session_state.resultado_optimizacion = None
                 st.session_state.perfil_usuario = None
+                st.session_state.nodo_base = {"lat": -12.0464, "lon": -77.0428}  # Centro de Lima
                 st.rerun()
 
         # 1. Tarjetas de Métricas Principales (5 Columnas)
