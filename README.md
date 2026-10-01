@@ -50,7 +50,7 @@ La aplicación se implementa con **Streamlit** (web en Python) para la interfaz,
 | **Temporada**        | Época de garúa (junio–octubre) como temporada óptima                               |
 | **Tecnología**       | Python (Streamlit, folium, scikit-fuzzy, LLM API)                                  |
 | **Días disponibles** | Determina K (destinos visitables): $K = \min(\max(2, \text{días}), 6)$ para $\text{días} \ge 2$, o $K = 1$ (shortcut determinista) |
-| **Stack**            | Streamlit + folium (Python puro, sin frontend separado)                            |
+| **Stack**            | **Arquitectura Desacoplada:** Backend FastAPI (Python) + Frontend SPA estilo Google Maps (React, Vite, TypeScript, Tailwind CSS, shadcn/ui, Leaflet, pnpm) |
 
 
 ### 2.3 Diferenciadores Respecto a Soluciones Existentes

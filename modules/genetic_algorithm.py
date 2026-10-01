@@ -258,6 +258,14 @@ class LomasGeneticOptimizer:
             "costo_mejor": round(mejor_destino.get("costo_estimado", 15.0), 2),
             "distancia_mejor": round(distancia_total, 2)
         }]
+        tramos = [
+            {
+                "de": "Punto de partida",
+                "hacia": mejor_destino["nombre"],
+                "distancia_km": round(distancia_total * 2, 1)
+            }
+        ]
+
         return {
             "ruta_ids": [mejor_id],
             "destinos_ordenados": [mejor_destino],
@@ -273,7 +281,7 @@ class LomasGeneticOptimizer:
             "distancia_total_km": round(distancia_total, 2),
             "tiempo_estimado_horas": round(mejor_destino.get("tiempo_estimado_horas", 4.0), 2),
             "riesgos_ruta": {mejor_id: self.riesgos_lomas.get(mejor_id, 5.0)},
-            "tramos": [],
+            "tramos": tramos,
             "metodo": "atajo_determinista",
             "grafica_ascii": "  [Atajo Determinista K=1: Seleccion Directa]",
             "historial": historial_data,
@@ -339,6 +347,21 @@ class LomasGeneticOptimizer:
             barra = "*" * max(1, pct)
             lineas_grafica.append(f"  Gen {h_step['generacion']:2d} | Fit: {h_step['mejor_fitness']:6.2f} | {barra}")
 
+        tramos = [
+            {
+                "de": "Punto de partida",
+                "hacia": self.destinos_dict[did]["nombre"],
+                "distancia_km": round(
+                    distancia_haversine(
+                        self.nodo_base["lat"], self.nodo_base["lon"],
+                        self.destinos_dict[did]["coordenadas"]["lat"],
+                        self.destinos_dict[did]["coordenadas"]["lon"]
+                    ) * 2, 1
+                )
+            }
+            for did in ruta_optima
+        ]
+
         return {
             "ruta_ids": ruta_optima,
             "destinos_ordenados": destinos_optimos,
@@ -350,7 +373,7 @@ class LomasGeneticOptimizer:
             "distancia_total_km": round(self.calcular_distancia_ruta(ruta_optima), 2),
             "tiempo_estimado_horas": round(sum(d.get("tiempo_estimado_horas", 4.0) for d in destinos_optimos), 2),
             "riesgos_ruta": {did: self.riesgos_lomas.get(did, 5.0) for did in ruta_optima},
-            "tramos": [],
+            "tramos": tramos,
             "metodo": "algoritmo_genetico",
             "grafica_ascii": "\n".join(lineas_grafica),
             "historial": historial,
