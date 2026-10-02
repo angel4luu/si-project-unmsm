@@ -150,6 +150,7 @@ const GoogleStyleMapComponent: React.FC<GoogleStyleMapProps> = ({
         map={mapInstanceRef.current}
         userCoords={userCoords}
         onUserCoordsChange={onUserCoordsChange}
+        draggable={!optimizationResult}
       />
 
       {/* Controles Flotantes del Mapa (Bottom Right) */}

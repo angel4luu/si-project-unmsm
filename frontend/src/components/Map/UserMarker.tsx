@@ -6,12 +6,14 @@ interface UserMarkerProps {
   map: L.Map | null;
   userCoords: Coordenadas;
   onUserCoordsChange: (coords: Coordenadas) => void;
+  draggable?: boolean;
 }
 
 export const UserMarker = memo(function UserMarker({
   map,
   userCoords,
   onUserCoordsChange,
+  draggable = true,
 }: UserMarkerProps) {
   const userMarkerRef = useRef<L.Marker | null>(null);
 
@@ -19,7 +21,7 @@ export const UserMarker = memo(function UserMarker({
     if (!map) return;
 
     const userIconHtml = `
-      <div class="relative flex items-center justify-center w-11 h-11 cursor-grab active:cursor-grabbing select-none group">
+      <div class="relative flex items-center justify-center w-11 h-11 ${draggable ? "cursor-grab active:cursor-grabbing" : "cursor-default"} select-none group">
         <span class="absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-40 animate-ping"></span>
         <span class="absolute inline-flex h-9 w-9 rounded-full bg-red-500/20 border border-red-500"></span>
         <div class="relative w-8 h-8 bg-red-600 rounded-full shadow-md border-2 border-white flex items-center justify-center text-white transition-transform group-hover:scale-110">
@@ -45,16 +47,18 @@ export const UserMarker = memo(function UserMarker({
 
       const marker = L.marker([userCoords.lat, userCoords.lon], {
         icon: userIcon,
-        draggable: true,
+        draggable,
         zIndexOffset: 10000,
-        title: "Tu punto de partida (Arrastra para reubicar)",
+        title: draggable ? "Tu punto de partida (Arrastra para reubicar)" : "Tu punto de partida (bloqueado mientras haya una ruta activa)",
       });
 
       marker.bindPopup(`
         <div style="font-family: inherit; min-width: 190px; padding: 4px;">
           <h4 style="margin: 0; color: #dc2626; font-weight: 700; font-size: 13px;">Tu punto de partida</h4>
           <p style="margin: 4px 0 0; font-size: 12px; color: #4b5563; line-height: 1.4;">
-            Arrastra este marcador para recalcular las rutas desde tu ubicación exacta.
+            ${draggable
+              ? "Arrastra este marcador para recalcular las rutas desde tu ubicación exacta."
+              : "El punto de partida está bloqueado mientras una ruta esté activa. Reconfigura los parámetros para poder moverlo."}
           </p>
         </div>
       `);
@@ -73,6 +77,11 @@ export const UserMarker = memo(function UserMarker({
     } else {
       userMarkerRef.current.setLatLng([userCoords.lat, userCoords.lon]);
       userMarkerRef.current.setIcon(userIcon);
+      if (draggable) {
+        userMarkerRef.current.dragging?.enable();
+      } else {
+        userMarkerRef.current.dragging?.disable();
+      }
     }
 
     return () => {
@@ -81,7 +90,7 @@ export const UserMarker = memo(function UserMarker({
         userMarkerRef.current = null;
       }
     };
-  }, [map, userCoords, onUserCoordsChange]);
+  }, [map, userCoords, onUserCoordsChange, draggable]);
 
   return null;
 });
