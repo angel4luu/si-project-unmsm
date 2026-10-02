@@ -6,6 +6,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/tabs";
 import { FuzzyScoresModal } from "./FuzzyScoresModal";
+import { useCountUp } from "../../hooks/useCountUp";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../ui/accordion";
@@ -49,6 +50,11 @@ const RouteResultsPanelComponent: React.FC<RouteResultsPanelProps> = ({
   const horasUtilesMax = (prefs?.dias_disponibles ?? result?.k ?? 1) * 8;
   const checksCumpleTiempo = result ? result.tiempo_estimado_horas <= horasUtilesMax : true;
   const cumpleRequerimientos = checksCumplePresupuesto && checksCumpleTiempo;
+
+  const kpiLomas = useCountUp(result?.k ?? 0);
+  const kpiCosto = useCountUp(result?.costo_total ?? 0);
+  const kpiDistancia = useCountUp(result?.distancia_total_km ?? 0);
+  const kpiRiesgo = useCountUp(riesgoPromedio);
 
   if (!isOpen || !result) return null;
 
@@ -100,7 +106,7 @@ const RouteResultsPanelComponent: React.FC<RouteResultsPanelProps> = ({
                 Lomas
               </div>
               <div className="text-base font-bold text-foreground mt-0.5">
-                {result.k}
+                {Math.round(kpiLomas)}
               </div>
             </div>
             <div className="bg-secondary/20 p-3 rounded-xl text-center border-2 border-primary/20">
@@ -108,7 +114,7 @@ const RouteResultsPanelComponent: React.FC<RouteResultsPanelProps> = ({
                 Costo
               </div>
               <div className="text-base font-bold text-foreground mt-0.5">
-                S/ {result.costo_total.toFixed(0)}
+                S/ {kpiCosto.toFixed(0)}
               </div>
             </div>
             <div className="bg-secondary/20 p-3 rounded-xl text-center border-2 border-primary/20">
@@ -116,15 +122,15 @@ const RouteResultsPanelComponent: React.FC<RouteResultsPanelProps> = ({
                 Distancia
               </div>
               <div className="text-base font-bold text-foreground mt-0.5">
-                {result.distancia_total_km.toFixed(1)} km
+                {kpiDistancia.toFixed(1)} km
               </div>
             </div>
             <div className="bg-secondary/20 p-3 rounded-xl text-center border-2 border-primary/20">
               <div className="text-[11px] text-muted-foreground uppercase font-medium">
-                Riesgo
+                Riesgo difuso
               </div>
               <div className="text-base font-bold text-foreground mt-0.5">
-                {riesgoPromedio.toFixed(1)}/10
+                {kpiRiesgo.toFixed(1)}/10
               </div>
             </div>
           </div>

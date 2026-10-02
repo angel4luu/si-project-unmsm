@@ -146,6 +146,7 @@ export function App() {
       />
 
       {/* 3. PANEL FLOTANTE DE PLANIFICACIÓN (Slid-out, altura acotada) */}
+      {isPlannerOpen && (
       <RoutePlannerPanel
         isOpen={isPlannerOpen}
         onClose={() => setIsPlannerOpen(false)}
@@ -155,6 +156,7 @@ export function App() {
         onOptimize={handleOptimize}
         isLoading={isLoading}
       />
+      )}
 
       {/* 4. PANEL FLOTANTE DE RESULTADOS DE RUTA OPTIMIZADA */}
       <RouteResultsPanel
