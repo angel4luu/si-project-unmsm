@@ -1,6 +1,6 @@
-import React, { useState, useCallback, memo } from "react";
+import React, { useState, useCallback, useEffect, memo } from "react";
 import type { UserPreferencesRequest, Coordenadas, PresetZona } from "../../types";
-import { X, Sparkles, Navigation, Calendar, Wallet, Activity } from "lucide-react";
+import { X, Sparkles, Navigation, Calendar, Wallet, Activity, Check, Loader2, ChevronDown } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -13,6 +13,14 @@ import {
   SelectValue,
 } from "../ui/select";
 import { Textarea } from "../ui/textarea";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible";
+
+const PIPELINE_STAGES = [
+  "Extrayendo preferencias con LLM",
+  "Evaluando lomas con lógica difusa",
+  "Optimizando ruta con algoritmo genético",
+  "Generando itinerario con LLM",
+];
 
 interface RoutePlannerPanelProps {
   isOpen: boolean;
@@ -38,6 +46,24 @@ const RoutePlannerPanelComponent: React.FC<RoutePlannerPanelProps> = ({
   const [condicion, setCondicion] = useState<"Fácil" | "Moderado" | "Difícil">("Moderado");
   const [textoUsuario, setTextoUsuario] = useState<string>("");
   const [selectedPreset, setSelectedPreset] = useState<string>("");
+  const [stageIndex, setStageIndex] = useState<number>(-1);
+
+  useEffect(() => {
+    if (isLoading) {
+      setStageIndex(0);
+      const interval = setInterval(() => {
+        setStageIndex((prev) => (prev < PIPELINE_STAGES.length - 1 ? prev + 1 : prev));
+      }, 1100);
+      return () => clearInterval(interval);
+    }
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (!isOpen) setStageIndex(-1);
+  }, [isOpen]);
+
+  const finished = !isLoading && stageIndex >= 0;
+  const showStages = isLoading || finished;
 
   const handleApplyPreset = useCallback((val: string) => {
     setSelectedPreset(val);
@@ -66,7 +92,7 @@ const RoutePlannerPanelComponent: React.FC<RoutePlannerPanelProps> = ({
 
   return (
     <div className="absolute top-20 left-4 z-20 w-[92vw] sm:w-[420px] max-w-[420px] h-[calc(100vh-140px)] max-h-[720px] flex flex-col animate-in slide-in-from-left-4 fade-in-50 duration-200">
-      <Card className="border border-border shadow-panel bg-card/98 backdrop-blur-md rounded-2xl flex flex-col h-full overflow-hidden">
+      <Card className="border border-border shadow-panel bg-card/98 backdrop-blur-md rounded-2xl flex flex-col h-full overflow-hidden bg-white">
         {/* Header Limpio y Minimalista */}
         <CardHeader className="p-4 border-b border-border bg-card flex-shrink-0">
           <div className="flex items-center justify-between">
@@ -229,6 +255,45 @@ const RoutePlannerPanelComponent: React.FC<RoutePlannerPanelProps> = ({
             </div>
           </form>
         </CardContent>
+
+        {/* Indicador de etapas del pipeline */}
+        {showStages && (
+          <div className="p-4 border-t border-border bg-card rounded-l-xl rounded-r-xl">
+            <Collapsible open={!finished}>
+              <CollapsibleTrigger className="flex w-full items-center justify-between text-xs font-semibold text-foreground">
+                <span className="flex items-center gap-2">
+                  {finished ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  ) : (
+                    <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+                  )}
+                  {finished ? "Pipeline completado" : "Procesando tu ruta..."}
+                </span>
+                <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${finished ? "-rotate-90" : ""}`} />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-2 space-y-1.5">
+                {PIPELINE_STAGES.map((stage, i) => {
+                  const done = finished || i < stageIndex;
+                  const running = !finished && i === stageIndex;
+                  return (
+                    <div key={stage} className="flex items-center gap-2 text-xs text-foreground/80">
+                      {done ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      ) : running ? (
+                        <Loader2 className="w-3.5 h-3.5 text-primary animate-spin shrink-0" />
+                      ) : (
+                        <span className="w-3.5 h-3.5 rounded-full border border-border shrink-0" />
+                      )}
+                      <span className={done ? "text-foreground/60 line-through decoration-emerald-600/40" : ""}>
+                        {stage}
+                      </span>
+                    </div>
+                  );
+                })}
+              </CollapsibleContent>
+            </Collapsible>
+          </div>
+        )}
 
         {/* Footer Fijo con Botón de Acción Principal */}
         <div className="p-4 border-t border-border bg-card flex-shrink-0">

@@ -22,6 +22,7 @@ export function App() {
   const [isResultsOpen, setIsResultsOpen] = useState<boolean>(false);
   const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [lastPrefs, setLastPrefs] = useState<UserPreferencesRequest | null>(null);
 
   // Memoized lookup map for lomas by ID - avoids O(n) lookups in render
   const lomasById = useMemo(() => {
@@ -57,6 +58,7 @@ export function App() {
   // Manejo de optimización de ruta
   const handleOptimize = useCallback(async (prefs: UserPreferencesRequest) => {
     setIsLoading(true);
+    setLastPrefs(prefs);
     try {
       const result = await optimizeRoute(prefs);
       setOptimizationResult(result);
@@ -160,6 +162,7 @@ export function App() {
         onClose={() => setIsResultsOpen(false)}
         result={optimizationResult}
         lomas={lomas}
+        prefs={lastPrefs}
         onFocusLoma={handleSelectLoma}
         onNewSearch={handleNewSearch}
       />

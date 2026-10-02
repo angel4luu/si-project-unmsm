@@ -31,6 +31,7 @@ export interface Loma {
   transporte_principal: string;
   descripcion: string;
   temporada_optima: string;
+  score_difuso?: number;
   guia_acceso?: GuiaAcceso;
 }
 
