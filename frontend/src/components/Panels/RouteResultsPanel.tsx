@@ -127,7 +127,7 @@ const RouteResultsPanelComponent: React.FC<RouteResultsPanelProps> = ({
             </div>
             <div className="bg-secondary/20 p-3 rounded-xl text-center border-2 border-primary/20">
               <div className="text-[11px] text-muted-foreground uppercase font-medium">
-                Riesgo difuso
+                Riesgo D.
               </div>
               <div className="text-base font-bold text-foreground mt-0.5">
                 {kpiRiesgo.toFixed(1)}/10
