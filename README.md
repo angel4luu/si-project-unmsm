@@ -37,7 +37,7 @@ Se propone el desarrollo de un **Software Inteligente de Optimización de Rutas 
 
 El sistema permite al usuario expresar sus preferencias turísticas de forma flexible (ya sea mediante un formulario estructurado o escribiendo en texto libre), evalúa las condiciones de cada loma mediante inferencia difusa, optimiza la selección y orden de destinos mediante un algoritmo genético, y finalmente genera un itinerario claro y detallado con instrucciones de acceso en lenguaje natural.
 
-La aplicación se implementa con **Streamlit** (web en Python) para la interfaz, **folium** para el mapa interactivo, y se despliega como una app web accesible desde cualquier navegador.
+La aplicación se implementa con un **backend FastAPI** (Python) y un **frontend SPA en React + Vite + TypeScript + Tailwind + shadcn/ui + Leaflet**, y se despliega como una app web accesible desde cualquier navegador. (La versión inicial prototipó con Streamlit + folium, conservada como interfaz heredada en `app.py`.)
 
 ### 2.2 Alcance y Delimitación
 
@@ -48,7 +48,7 @@ La aplicación se implementa con **Streamlit** (web en Python) para la interfaz,
 | **Actividad**        | Trekking y exploración de lomas                                                    |
 | **Usuario**          | Turista nacional y extranjero interesado en naturaleza                             |
 | **Temporada**        | Época de garúa (junio–octubre) como temporada óptima                               |
-| **Tecnología**       | Python (Streamlit, folium, scikit-fuzzy, LLM API)                                  |
+| **Tecnología**       | Python (FastAPI, scikit-fuzzy, LLM API) + TypeScript (React, Vite, shadcn/ui, Leaflet) |
 | **Días disponibles** | Determina K (destinos visitables): $K = \min(\max(2, \text{días}), 6)$ para $\text{días} \ge 2$, o $K = 1$ (shortcut determinista) |
 | **Stack**            | **Arquitectura Desacoplada:** Backend FastAPI (Python) + Frontend SPA estilo Google Maps (React, Vite, TypeScript, Tailwind CSS, shadcn/ui, Leaflet, pnpm) |
 
@@ -514,25 +514,25 @@ Evaluemos el **Plan 1** (`L4: Mangomarca` $\to$ `L3: Manchay` $\to$ `L0: Paraís
 | :---: | :--- | :--- | :---: |
 | **1** | **Componente 1: Nivel de Exigencia** | Genes reales (4.2, 0.65, 6.8) → Motor Mamdani → `nivel_exigencia = 0.58` | — |
 | **2** | **Beneficio Base** | Mangomarca (7.0) + Manchay (6.5) + Paraíso (7.5) = 21.0 | **+21.00** |
-| **3** | **Bonificación Exigencia** | $\delta \times 0.58 = 2.0 \times 0.58$ | **+1.16** |
+| **3** | **Penalización Exigencia** | $\delta \times (0.58 - 0.50)^2 = 2.0 \times 0.0064$ | **-0.01** |
 | **4** | **Componente 2: Riesgo Difuso** | L4 riesgo=2.8 + L3 riesgo=3.5 + L0 riesgo=2.2 = 8.5 | — |
-| **5** | **Penalización Riesgo** | $\gamma \times (8.5/10) \times (1 - 0.58 \times 0.3) = 1.5 \times 0.85 \times 0.826$ | **-1.05** |
+| **5** | **Penalización Riesgo** | $\gamma \times (8.5/10) \times (1 - 0.58 \times 0.2) = 1.5 \times 0.85 \times 0.884$ | **-1.13** |
 | **6** | **Desplazamiento Radial** | 42.0 km total → $1.0 \times (42/100)$ | **-0.42** |
 | **7** | **Presupuesto** | S/ 35 ≤ S/ 60 → Sin exceso | **-0.00** |
 | **8** | **Tiempo** | 12h ≤ 24h útiles → Sin exceso | **-0.00** |
-| **FINAL** | **Fitness** | $21.00 + 1.16 - 1.05 - 0.42 - 0.00 - 0.00$ | **20.69** |
+| **FINAL** | **Fitness** | $21.00 - 0.01 - 1.13 - 0.42 - 0.00 - 0.00$ | **19.44** |
 
 #### Formulación Matemática Formal
 
 $$
-\boxed{F(x) = \sum_{j=1}^{K} B(d_j) \;+\; \delta \cdot E_{\text{exig}} \;-\; \gamma \cdot \frac{\sum_{j=1}^{K} R_{\text{riesgo}}(d_j)}{10} \cdot (1 - E_{\text{exig}} \cdot 0.3) \;-\; \beta \cdot \frac{\text{Dist}(x)}{100} \;-\; \lambda_1 \cdot \left(\frac{\Delta_P}{P}\right)^2 \;-\; \lambda_2 \cdot \left(\frac{\Delta_T}{T}\right)^2 \;-\; \Omega_u}
+\boxed{F(x) = \sum_{j=1}^{K} B(d_j) \;-\; \delta \cdot (E_{\text{exig}} - E^{*})^2 \;-\; \gamma \cdot \frac{\sum_{j=1}^{K} R_{\text{riesgo}}(d_j)}{10} \cdot (1 - E_{\text{exig}} \cdot 0.2) \;-\; \beta \cdot \frac{\text{Dist}(x)}{100} \;-\; \lambda_1 \cdot \left(\frac{\Delta_P}{P}\right)^2 \;-\; \lambda_2 \cdot \left(\frac{\Delta_T}{T}\right)^2 \;-\; \Omega_u}
 $$
 
 Donde:
 - $B(d_j)$: Beneficio base intrínseco de la loma $d_j$.
 - $E_{\text{exig}} \in [0, 1]$: Nivel de exigencia difuso, obtenido del **Componente 1** (genes reales del cromosoma → Mamdani).
 - $R_{\text{riesgo}}(d_j) \in [0, 10]$: Nivel de riesgo difuso de la loma, obtenido del **Componente 2** (datos de la loma → Mamdani).
-- $\delta = 2.0$: Peso de bonificación por exigencia.
+- $\delta = 2.0$: Peso de la penalización por desvío de exigencia respecto al objetivo $E^{*} = 0.50$.
 - $\gamma = 1.5$: Peso de penalización por riesgo.
 - $\beta = 1.0$, $\lambda_1 = 25.0$, $\lambda_2 = 25.0$: Pesos de distancia, presupuesto y tiempo.
 - $\Omega_u = 1000 \cdot (K - |\text{set}(x_{1..K})|)$: Salvaguarda de unicidad.
@@ -574,9 +574,9 @@ flowchart TB
 
 ### 7.1 Descripción General
 
-La interfaz se implementa con **Streamlit** (Python web framework) y se organiza en un **layout responsivo**: una barra lateral (*sidebar*) para la captura del perfil del usuario y un área principal dividida en columnas para el mapa interactivo (`folium`) y la presentación de resultados.
+La interfaz se implementa con **FastAPI + React** y se organiza como una **SPA estilo Google Maps**: mapa a pantalla completa con paneles flotantes para la captura del perfil del usuario y la presentación de resultados (itinerario LLM y guía de acceso).
 
-Streamlit permite generar una aplicación web sin necesidad de frontend separado (React, HTML, CSS). El mapa se renderiza con folium embebido en Streamlit mediante la librería `streamlit_folium`.
+El frontend (React, Vite, TypeScript, Tailwind CSS, shadcn/ui, Leaflet) consume la API REST del backend FastAPI; el mapa se renderiza con react-leaflet. Una primera versión prototipó con Streamlit + folium (`app.py`), que se conserva como referencia.
 
 ### 7.2 Componentes de la GUI
 
@@ -607,24 +607,20 @@ flowchart TD
 
 ### 7.4 Justificación del Stack UI
 
-Se eligió **Streamlit + folium** en lugar de React + shadcn + Mapbox por las siguientes razones:
+La interfaz usa **React + Vite + shadcn/ui + Leaflet (backend FastAPI)** por las siguientes razones:
 
-- **Stack unificado en Python**: Todo el sistema (AG, Fuzzy, LLM, GUI) se implementa en un solo lenguaje, eliminando la necesidad de un backend REST separado
-- **Despliegue rápido**: Streamlit genera una web automáticamente sin configuración de servidor
-- **folium para mapas**: Integra OpenStreetMap interactivo con marcadores, popups y zoom nativo
-- **Menor complejidad**: Para un proyecto académico con grupo de 5 personas, la calidad de la lógica (AG + Fuzzy) es más relevante que la estética del frontend
-- **Apariencia profesional**: folium con tiles de Mapbox se ve similar a Google Maps, suficiente para el alcance del proyecto
-- **Sin polilíneas en el mapa**: La ruta se comunica mediante el badge numérico en cada marcador, no por líneas que podrían confundir al usuario
-- **El enunciado pide interfaz gráfica**: Streamlit cumple este requisito sin complejidad adicional
+- **Experiencia moderna tipo Google Maps**: paneles flotantes, marcador arrastrable para el nodo base y resultados en tarjetas
+- **Separación clara frontend/backend**: la lógica inteligente (AG, Fuzzy, LLM) vive en un API REST testeable
+- **Componentes reutilizables**: shadcn/ui aporta diálogos, tablas, acordeones y colapsables consistentes
+- **Mapa interactivo (Leaflet)**: OpenStreetMap con marcadores numerados, popups y zoom nativo
+- **El enunciado pide interfaz gráfica**: la SPA React cumple este requisito con una estética profesional
 
 ### 7.5 Bibliotecas de Python para la GUI
 
 
 | Librería               | Función                                |
 | ---------------------- | -------------------------------------- |
-| `streamlit`            | Framework de la aplicación web         |
-| `streamlit-folium`     | Integración de folium en Streamlit     |
-| `folium`               | Mapa interactivo con OpenStreetMap     |
+| `FastAPI` + `uvicorn`  | Backend REST de la aplicación          |
 | `scikit-fuzzy`         | Sistema de inferencia difusa (Mamdani) |
 | `openai` o `anthropic` | API del LLM                            |
 | `json`                 | Carga del catálogo de destinos         |
@@ -739,14 +735,14 @@ El **método de suma ponderada** es la técnica estándar en optimización multi
 
 ### 10.5 ¿Por qué Streamlit y folium para la interfaz?
 
-Se eligió Streamlit en lugar de frameworks de frontend separados por estas razones:
+Se implementó la interfaz con React + Vite (frontend) y FastAPI (backend REST) por estas razones:
 
-- **Stack unificado**: Todo el sistema (AG, Fuzzy, LLM, GUI) se implementa en Python
-- **Sin backend REST separado**: Streamlit maneja la web directamente
-- **Despliegue rápido**: La app se ejecuta con un solo comando `streamlit run app.py`
-- **Folium para mapas**: Integración nativa de mapas interactivos con marcadores, popups y zoom
+- **API desacoplada**: la lógica inteligente (AG, Fuzzy, LLM) se expone como servicio testeable
+- **Estética profesional tipo Google Maps**: paneles flotantes, mapa a pantalla completa, Leaflet
+- **El prototipo Streamlit + folium** (`app.py`) se conserva como referencia histórica
+- **Para un proyecto académico**: la calidad de la lógica (AG + Fuzzy) es más relevante que la estética del frontend, pero la UI moderna refuerza la presentación
 - **Sin polilíneas**: La ruta se comunica mediante badges numéricos en marcadores, evitando confusión visual
-- **Para un proyecto académico**: La calidad de la lógica (AG + Fuzzy) es más relevante que la estética del frontend
+- **Despliegue documentado**: backend `python backend/run_server.py`, frontend `pnpm dev`
 
 ### 10.6 ¿Por qué reducir el sistema difuso a 4 variables en lugar de 9?
 
