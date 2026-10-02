@@ -42,6 +42,7 @@ class LomaSummaryModel(BaseModel):
     transporte_principal: str
     descripcion: str
     temporada_optima: str
+    score_difuso: float = Field(default=0.0, description="Score de riesgo 0-10 calculado por el sistema difuso Mamdani")
 
 
 class GuiaAccesoModel(BaseModel):

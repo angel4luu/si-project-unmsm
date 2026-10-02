@@ -15,6 +15,7 @@ from backend.app.schemas.api_models import (
     PresetZonaModel
 )
 from modules.access_module import LomasAccessService
+from modules.fuzzy_module import LomasFuzzyEngine
 
 router = APIRouter(tags=["Lomas y Presets"])
 
@@ -28,6 +29,8 @@ def _load_destinos():
 DESTINOS = _load_destinos()
 DESTINOS_DICT = {d["id"]: d for d in DESTINOS}
 ACCESS_SERVICE = LomasAccessService(DESTINOS_DICT)
+FUZZY_ENGINE = LomasFuzzyEngine()
+SCORES_DIFUSOS = FUZZY_ENGINE.calcular_riesgos_catalogo(DESTINOS)
 
 PRESETS_LIMA = [
     PresetZonaModel(nombre="Centro de Lima (Plaza Mayor / Centro Histórico)", lat=-12.0464, lon=-77.0428),
@@ -69,7 +72,7 @@ def get_lomas(
     if dificultad:
         resultados = [d for d in resultados if d["dificultad"].lower() == dificultad.strip().lower()]
 
-    return resultados
+    return [{**d, "score_difuso": SCORES_DIFUSOS.get(d["id"], 0.0)} for d in resultados]
 
 
 @router.get("/lomas/{id_loma}", response_model=LomaDetailModel)
@@ -99,7 +102,7 @@ def get_loma_detail(id_loma: str):
         )
     )
 
-    return {**loma, "guia_acceso": guia}
+    return {**loma, "score_difuso": SCORES_DIFUSOS.get(id_upper, 0.0), "guia_acceso": guia}
 
 
 @router.get("/presets", response_model=List[PresetZonaModel])
