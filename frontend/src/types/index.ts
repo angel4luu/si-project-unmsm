@@ -76,6 +76,7 @@ export interface OptimizationResult {
   guias_acceso: GuiaAcceso[];
   metodo: string;
   grafica_ascii: string;
+  llm_provider?: "gemini" | "fallback" | string;
   historial: Array<{
     generacion: number;
     mejor_fitness: number;

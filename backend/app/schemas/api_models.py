@@ -83,3 +83,4 @@ class OptimizationResponse(BaseModel):
     metodo: str
     grafica_ascii: str
     historial: List[Dict[str, Any]] = []
+    llm_provider: str = Field(default="fallback", description="Proveedor del itinerario narrativo: 'gemini' o 'fallback'")

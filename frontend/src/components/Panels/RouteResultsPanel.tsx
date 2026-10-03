@@ -302,7 +302,9 @@ const RouteResultsPanelComponent: React.FC<RouteResultsPanelProps> = ({
                 </ReactMarkdown>
               </div>
               <p className="text-xs text-muted-foreground text-right italic tracking-wide">
-                Texto generado por un LLM
+                {result.llm_provider === "gemini"
+                  ? "Texto generado por Gemini"
+                  : "Texto generado localmente (sin conexión)"}
               </p>
             </TabsContent>
 

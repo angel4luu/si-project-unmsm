@@ -63,6 +63,7 @@ class OptimizationResultDTO:
     metodo: str
     grafica_ascii: str
     historial: List[Dict[str, Any]] = field(default_factory=list)
+    llm_provider: str = "fallback"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

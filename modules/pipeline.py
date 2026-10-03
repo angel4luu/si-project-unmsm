@@ -102,5 +102,6 @@ class LomasPipelineOrchestrator:
             guias_acceso=guias_acceso,
             metodo=resultado_ag.get("metodo", "algoritmo_genetico"),
             grafica_ascii=resultado_ag.get("grafica_ascii", ""),
-            historial=resultado_ag.get("historial", [])
+            historial=resultado_ag.get("historial", []),
+            llm_provider=getattr(self.llm_service, "ultimo_origen", "fallback")
         )
