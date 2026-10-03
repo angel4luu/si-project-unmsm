@@ -5,7 +5,9 @@ import streamlit as st
 # Módulos del sistema inteligente (POO y DTOs)
 from modules.dtos import UserPreferencesDTO, CoordenadasDTO
 from modules.pipeline import LomasPipelineOrchestrator
+from modules.llm_module import LomasLLMService
 from modules.access_module import obtener_guia_acceso
+
 
 # Verificación de librerías de mapas
 try:
@@ -190,7 +192,32 @@ def main():
         )
 
         st.markdown("---")
-        st.subheader("3. Punto de Partida (Alojamiento $d_0$)")
+        st.subheader("3. Configuración de IA Generativa (Gemini)")
+        api_key_env = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
+        with st.expander("⚙️ Opciones de Gemini AI", expanded=not bool(api_key_env)):
+            gemini_key_input = st.text_input(
+                "Gemini API Key:",
+                value=api_key_env,
+                type="password",
+                placeholder="AIzaSy...",
+                help="Ingresa tu clave de Google Gemini o configúrala en el archivo .env como GEMINI_API_KEY."
+            )
+            gemini_model_input = st.selectbox(
+                "Modelo Gemini:",
+                ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash"],
+                index=0,
+                help="Selecciona el modelo de lenguaje de Google para extracción semántica e itinerario narrativo."
+            )
+
+        active_api_key = gemini_key_input.strip() if gemini_key_input.strip() else None
+        llm_service_preview = LomasLLMService(api_key=active_api_key, model=gemini_model_input)
+        if llm_service_preview.is_gemini_active():
+            st.success(f"🟢 **Gemini Activo** (`{gemini_model_input}`)")
+        else:
+            st.info("⚡ **Fallback Heurístico Local** (Sin API Key / Modo offline)")
+
+        st.markdown("---")
+        st.subheader("4. Punto de Partida (Alojamiento $d_0$)")
         st.caption("Arrastra el pin rojo en el mapa para ubicar tu hospedaje, o elige una zona rápida:")
 
         st.selectbox(
@@ -218,9 +245,11 @@ def main():
                     texto_usuario=texto_usuario.strip() if texto_usuario.strip() else None
                 )
 
-                # 2. Ejecutar mediante el Orquestador Centralizado
-                orquestador = LomasPipelineOrchestrator(destinos)
+                # 2. Instanciar servicio LLM e Inyectar en el Orquestador Centralizado
+                llm_service = LomasLLMService(api_key=active_api_key, model=gemini_model_input)
+                orquestador = LomasPipelineOrchestrator(destinos, llm_service=llm_service)
                 resultado_dto = orquestador.run(user_dto)
+
 
                 # 3. Guardar en sesión de Streamlit
                 st.session_state.resultado_optimizacion = {

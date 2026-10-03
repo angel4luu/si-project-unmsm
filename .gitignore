@@ -1,5 +1,8 @@
 # Custom project ignores
 plans/
+proyecto_contexto.txt
+*.log
+
 
 # Python
 __pycache__/
