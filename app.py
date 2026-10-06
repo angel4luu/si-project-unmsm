@@ -176,7 +176,7 @@ def main():
 
         st.subheader("2. Preferencias cualitativas y clima (NLP/IA)")
         st.caption("El motor NLP calibrará las reglas difusas y el AG a partir de tus palabras clave:")
-        with st.expander("ℹ️ Ver características reconocibles", expanded=False):
+        with st.expander("Ver características reconocibles", expanded=False):
             st.markdown("""
             - ☀️ **Clima/Ambiente:** *soleado, despejado, garúa, neblina, verde.*
             - 🏛️ **Intereses:** *arqueología, ruinas, miradores, fotografía, paisajes.*
@@ -194,7 +194,7 @@ def main():
         st.markdown("---")
         st.subheader("3. Configuración de IA Generativa (Gemini)")
         api_key_env = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
-        with st.expander("⚙️ Opciones de Gemini AI", expanded=not bool(api_key_env)):
+        with st.expander("Opciones de Gemini AI", expanded=not bool(api_key_env)):
             gemini_key_input = st.text_input(
                 "Gemini API Key:",
                 value=api_key_env,
@@ -214,7 +214,7 @@ def main():
         if llm_service_preview.is_gemini_active():
             st.success(f"🟢 **Gemini Activo** (`{gemini_model_input}`)")
         else:
-            st.info("⚡ **Fallback Heurístico Local** (Sin API Key / Modo offline)")
+            st.info("**Fallback Heurístico Local** (Sin API Key / Modo offline)")
 
         st.markdown("---")
         st.subheader("4. Punto de Partida (Alojamiento $d_0$)")
@@ -227,7 +227,7 @@ def main():
             on_change=aplicar_preset_zona
         )
 
-        st.caption(f"📍 **Coordenadas activas:** `({st.session_state.nodo_base['lat']:.4f}, {st.session_state.nodo_base['lon']:.4f})`")
+        st.caption(f"**Coordenadas activas:** `({st.session_state.nodo_base['lat']:.4f}, {st.session_state.nodo_base['lon']:.4f})`")
 
         btn_optimizar = st.button("Generar ruta óptima", type="primary", use_container_width=True)
 
@@ -302,7 +302,7 @@ def main():
                 if -13.0 <= nueva_lat <= -11.0 and -78.0 <= nueva_lon <= -76.0:
                     if nueva_lat != round(st.session_state.nodo_base["lat"], 4) or nueva_lon != round(st.session_state.nodo_base["lon"], 4):
                         st.session_state.nodo_base = {"lat": nueva_lat, "lon": nueva_lon}
-                        st.toast(f"📍 Alojamiento movido a ({nueva_lat}, {nueva_lon})")
+                        st.toast(f"Alojamiento movido a ({nueva_lat}, {nueva_lon})")
                         st.rerun()
     else:
         st.info("Para visualizar el mapa interactivo en Folium, instala `pip install folium streamlit-folium`.")
