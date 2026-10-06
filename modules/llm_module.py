@@ -41,7 +41,7 @@ class LomasLLMService:
                 or os.getenv("GOOGLE_API_KEY")
                 or os.getenv("OPENAI_API_KEY")
             )
-        self.model_name = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        self.model_name = model or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
         self.client = None
         self.ultimo_origen = "fallback"
 

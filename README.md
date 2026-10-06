@@ -622,9 +622,20 @@ La interfaz usa **React + Vite + shadcn/ui + Leaflet (backend FastAPI)** por las
 | ---------------------- | -------------------------------------- |
 | `FastAPI` + `uvicorn`  | Backend REST de la aplicación          |
 | `scikit-fuzzy`         | Sistema de inferencia difusa (Mamdani) |
-| `openai` o `anthropic` | API del LLM                            |
+| `google-genai`         | SDK de la API de Gemini (LLM)          |
 | `json`                 | Carga del catálogo de destinos         |
 
+
+### 7.6 Ejecución en consola
+
+El proyecto puede ejecutarse completamente desde la terminal, sin abrir el navegador.
+
+1. Crear el archivo `.env` en la raíz del proyecto a partir de `.env.example` y colocar la clave de API de Gemini en `GEMINI_API_KEY`.
+2. Instalar las dependencias con `pip install -r requirements.txt`.
+3. Ejecutar el pipeline completo (LLM, lógica difusa y algoritmo genético) con `python main.py --texto "Quiero viajar 3 días con 60 soles por senderos verdes"`.
+4. Ejecutar el algoritmo genético de forma independiente, con parámetros configurables y semilla fija, con `python ag_cli.py --k 3 --presupuesto 60 --dias 3 --generaciones 50 --poblacion 40 --semilla 42`.
+5. Ejecutar el algoritmo genético en modo interactivo, respondiendo las preguntas con valores por defecto, con `python ag_cli.py`.
+6. Ambos modos muestran la ruta óptima, el fitness, el costo, la distancia, los genes reales del cromosoma, el riesgo difuso por loma y la curva de convergencia evolutiva en consola.
 
 ---
 
